@@ -33,13 +33,35 @@ Status: **draft** — built from the database schema; revisit once screens are f
 - IDs are JSON numbers (BIGSERIAL stays below JS's 2^53 limit).
 - Timestamps are ISO-8601 UTC strings.
 - Coins are integers only.
-- Auth: JWT in an `httpOnly` cookie. Next.js server components forward the cookie to the Go API.
+- Auth: JWTs in httpOnly cookies — see [Authentication](#authentication) below.
 - Lists use cursor pagination: `?cursor=&limit=`.
 - All errors share one shape:
 
 ```json
 { "error": { "code": "INSUFFICIENT_FUNDS", "message": "Not enough coins", "fields": {} } }
 ```
+
+### Authentication
+
+The Go backend issues two JWTs and sends both as cookies. No server-side sessions.
+
+| | `access_token` | `refresh_token` |
+|---|---|---|
+| Purpose | Authenticates every API request | Gets a new pair when the access token expires |
+| Signed with | EdDSA (Ed25519) private key held only by the backend | Backend's choice (only the backend reads it) |
+| Required claims | `user_id` (number), `exp`, `iat` | Backend's choice; include a `jti` if refresh tokens can be revoked |
+| Suggested lifetime | 15 minutes | 7–30 days |
+| Cookie attributes | `HttpOnly; SameSite=Lax; Path=/; Secure` (omit `Secure` on http://localhost) | same |
+
+- **Set on:** `POST /auth/login`, `POST /auth/register` and `POST /auth/refresh`. **Cleared on:** `POST /auth/logout` (expire both cookies).
+- **`Path=/` is required on both cookies.** The Next.js route guard (`frontend/src/proxy.ts`) runs on page URLs, not `/api/v1`, so it can only see cookies scoped to `/`.
+- **Public key:** the backend shares its Ed25519 public key as `public.pem` (SPKI PEM). The frontend reads it from `JWT_PUBLIC_KEY_PATH` (default `frontend/keys/public.pem`) or `JWT_PUBLIC_KEY` and verifies `access_token` locally, accepting only `alg: EdDSA`.
+- **Refresh:** `POST /auth/refresh` reads the `refresh_token` cookie, returns `204` with new `access_token` and `refresh_token` cookies, or `401` if the refresh token is missing, expired or revoked. It should rotate the refresh token on every use.
+- **Backend checks on every protected endpoint:** verify the `access_token` signature and `exp`, take the acting user from `user_id` (never from the request body), and return `401 UNAUTHORIZED` if the token is missing, invalid or expired.
+
+**How the frontend uses them:**
+1. **Page requests:** `proxy.ts` verifies `access_token` with the public key. If it's invalid and a `refresh_token` exists, the proxy calls `POST {API_URL}/api/v1/auth/refresh`, forwards the new `Set-Cookie` headers to the browser, and lets the page load. Otherwise it redirects to `/login?next=<path>`.
+2. **API calls from the browser:** on a `401`, the client calls `/auth/refresh` once, retries the original request, and redirects to `/login?next=<path>` if it still fails. Simultaneous 401s share one refresh call.
 
 ## 3. Response types
 
@@ -242,15 +264,16 @@ interface CancelMarketRequest  { reason?: string; }
 
 ## 5. Routes
 
-All routes are prefixed with `/api/v1`.
+All routes are prefixed with `/api/v1`. Every route requires a valid `access_token` cookie except `POST /auth/register`, `POST /auth/login` and `POST /auth/refresh`.
 
 ### Auth and current user
 
 | Method | Route | Body | Returns |
 |---|---|---|---|
-| POST | `/auth/register` | `RegisterRequest` | `Me` — also creates wallet + `INITIAL_BONUS` transaction |
-| POST | `/auth/login` | `LoginRequest` | `Me` + sets auth cookie |
-| POST | `/auth/logout` | — | `204` |
+| POST | `/auth/register` | `RegisterRequest` | `Me` + sets `access_token` and `refresh_token` cookies — also creates wallet + `INITIAL_BONUS` transaction |
+| POST | `/auth/login` | `LoginRequest` | `Me` + sets `access_token` and `refresh_token` cookies. `401 UNAUTHORIZED` for wrong email or password |
+| POST | `/auth/refresh` | — (uses the `refresh_token` cookie) | `204` + new `access_token` and `refresh_token` cookies, or `401` |
+| POST | `/auth/logout` | — | `204` + clears both cookies |
 | GET | `/me` | — | `Me` |
 | PATCH | `/me` | `UpdateMeRequest` | `Me` |
 | GET | `/me/positions?status=open\|settled&cursor=` | — | `Paginated<Position>` |

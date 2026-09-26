@@ -243,7 +243,7 @@ function requireModerator(m: MarketRow) {
 
 const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/auth\/(login|register)$/, () => me()],
-  ["POST", /^\/auth\/logout$/, () => undefined],
+  ["POST", /^\/auth\/(logout|refresh)$/, () => undefined],
   ["GET", /^\/me$/, () => me()],
   ["GET", /^\/me\/wallet$/, () => wallet],
 
