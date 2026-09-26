@@ -487,7 +487,8 @@ function sortAndFilter(list: MarketRow[], q: Query): MarketSummary[] {
     .map(marketSummary);
 }
 
-const LATENCY_MS = 200;
+// Simulated network delay so loading states show up in the browser; skipped under test.
+const LATENCY_MS = process.env.NODE_ENV === "test" ? 0 : 200;
 
 export async function mockRequest<T>(method: string, path: string, query: Query, body: unknown): Promise<T> {
   await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));

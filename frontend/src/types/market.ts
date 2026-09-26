@@ -14,7 +14,7 @@ export interface MarketOption {
   text: string;
   totalAmount: number;
   positionCount: number;
-  /** totalAmount / market pool, 0â€“1 (even split when the pool is empty). */
+  /** totalAmount / market pool, 0–1 (even split when the pool is empty). */
   probability: number;
   /** null until the market is resolved. */
   isWinner: boolean | null;
@@ -128,7 +128,7 @@ export interface CreateMarketRequest {
   marketType: MarketType;
   /** Must be in the future. */
   deadline: ISODate;
-  /** Required for MULTIPLE_CHOICE (2â€“10). Ignored for BINARY â€” backend creates YES/NO. */
+  /** Required for MULTIPLE_CHOICE (2–10). Ignored for BINARY — backend creates YES/NO. */
   options?: string[];
   /** Defaults to the creator. Must be a MODERATOR/ADMIN of the community. */
   moderatorId?: ID;
