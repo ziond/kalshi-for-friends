@@ -12,27 +12,29 @@ This split is proposed; confirm it with the other engineer before parallel work.
 
 ## Message for the other backend engineer
 
-The Go backend skeleton is being prepared on backend-owen. Please own auth,
-users, communities, membership, and invite links. Owen owns markets, positions,
-points/refills, transaction history, settlement/refunds, and rankings.
+The Go backend skeleton and reviewed PostgreSQL migration pairs 000001 through
+000004 are the baseline on backend-owen. The migration test passed locally;
+the shared database is not connected or migrated yet. Please own auth, users, communities, membership, and
+invite links. Owen owns markets, positions, points/refills, transaction history,
+settlement/refunds, and rankings, and coordinates migration numbering.
 
-Our next shared task is the PostgreSQL schema and database connection. Agree on
-one migration owner, user IDs, the authenticated-user interface, and API response
-conventions before writing those integrations. Registration will need to create
-the user and starting-point grant atomically; coordinate that with Owen's points
-and transaction modules.
+Once you have this baseline commit, start handlers and SQL queries against
+docs/api.md and docs/database.md. Use /api/v1, camelCase JSON, and JWT in an
+HTTP-only cookie. Do not create competing migrations or auto-migrate.
+Registration must create user + wallet + INITIAL_BONUS in one transaction.
+Community creation must create the creator's ADMIN membership in one transaction.
+Read docs/database.md for exact columns, constraints, and transaction integration.
 
 ## Decisions still pending
 
-- Final schema, ID types, constraints, and migration tooling.
-- Starting-point amount and refill eligibility rules.
-- Registration integration with point balance and transaction history.
-- Payout rounding, no-winning-stake handling, and cancellation rules.
-- Leaderboard metric and how refill grants affect it.
-- Endpoint names, response conventions, and authentication interface.
+- Configure the development database and apply migrations with golang-migrate.
+- Starting-point amount and refill endpoint/eligibility rules.
+- Registration integration, cookie settings, and idempotency headers.
+- Payout rounding aggregation/tie-breaking and score formula.
+- Moderator/admin resolution permissions, timing, and cancellation rules.
 
 ## Current review boundary
 
-Skeleton files only. Application logic, migrations, and the database connection
-are deferred to later tasks. Review changes locally and obtain Owen's approval
-before each push.
+Skeleton, frontend API draft, and proposed SQL migrations/documentation only.
+Application logic and the database connection are deferred to later tasks.
+Review changes locally and obtain Owen's approval before each push.

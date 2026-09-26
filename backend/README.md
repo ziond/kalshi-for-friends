@@ -7,7 +7,9 @@ declarations and responsibility comments only, except for an empty main function
 Fiber, PostgreSQL driver, authentication libraries, and other dependencies will
 be added when their implementation starts.
 
-The next stage is to agree on the schema, add SQL migrations, and connect PostgreSQL.
+Four PostgreSQL migration pairs now define the proposed MVP schema. Review the
+[database handoff](docs/database.md), verify the migrations using the isolated
+test script, then configure the application's PostgreSQL connection as the next stage.
 
 ## Layout
 
@@ -29,7 +31,9 @@ backend/
       transactions/        Point movement audit history
       settlement/          Resolution, payouts, cancellation, refunds
       leaderboard/         Rankings
-  migrations/              Future versioned SQL migrations
+  migrations/              Versioned PostgreSQL up/down migrations
+  scripts/                 Isolated migration verification
+  tests/                   SQL constraint and lifecycle fixtures
   docs/                    API contracts and team coordination
 ```
 
@@ -51,7 +55,8 @@ go test ./...
 go vet ./...
 ```
 
-There are no tests or external dependencies yet; these commands currently verify
-that the scaffold compiles and passes static checks.
+There are no Go tests or external Go dependencies yet; these commands currently
+verify that the scaffold compiles and passes static checks. For database migration
+tests, see [migrations/README.md](migrations/README.md).
 
 See [team coordination](docs/team-coordination.md) before starting implementation.
