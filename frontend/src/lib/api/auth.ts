@@ -1,4 +1,5 @@
 import type {
+  DepositRequest,
   ID,
   LoginRequest,
   Me,
@@ -27,6 +28,7 @@ export const meApi = {
   positions: (params?: PositionListParams) =>
     api.get<Paginated<Position>>("/me/positions", { query: { ...params } }),
   wallet: () => api.get<Wallet>("/me/wallet"),
+  deposit: (body: DepositRequest) => api.post<Wallet>("/me/wallet/deposit", body),
   modQueue: () => api.get<ModQueue>("/me/mod-queue"),
   transactions: (params?: PaginationParams) =>
     api.get<Paginated<Transaction>>("/me/transactions", { query: { ...params } }),

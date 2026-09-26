@@ -16,6 +16,7 @@ export type MarketStatus = "OPEN" | "LOCKED" | "RESOLVED" | "CANCELLED";
 
 export type TransactionType =
   | "INITIAL_BONUS"
+  | "DEPOSIT"
   | "PLACE_POSITION"
   | "WIN_REWARD"
   | "LOSS"

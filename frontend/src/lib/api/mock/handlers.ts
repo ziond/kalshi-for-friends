@@ -9,6 +9,7 @@ import type {
   CommunitySummary,
   CreateCommunityRequest,
   CreateMarketRequest,
+  DepositRequest,
   ID,
   InvitePreview,
   MarketActivity,
@@ -24,6 +25,7 @@ import type {
   Role,
   UserSummary,
 } from "@/types";
+import { MAX_DEPOSIT } from "@/types";
 import { ApiError } from "../errors";
 import {
   ME,
@@ -244,6 +246,17 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/auth\/logout$/, () => undefined],
   ["GET", /^\/me$/, () => me()],
   ["GET", /^\/me\/wallet$/, () => wallet],
+
+  ["POST", /^\/me\/wallet\/deposit$/, (_, __, body) => {
+    const { amount } = body as DepositRequest;
+    if (!Number.isInteger(amount) || amount < 1 || amount > MAX_DEPOSIT) {
+      throw new ApiError(400, "VALIDATION_ERROR", `Enter a whole number from 1 to ${MAX_DEPOSIT.toLocaleString()}`,
+        { amount: "Invalid amount" });
+    }
+    wallet.balance += amount;
+    wallet.updatedAt = nowIso();
+    return wallet;
+  }],
   ["GET", /^\/me\/transactions$/, (_, q) => page([], q)],
 
   ["GET", /^\/me\/positions$/, (_, q) => {

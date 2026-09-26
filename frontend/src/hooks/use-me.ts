@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi, meApi } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
-import type { PositionListParams } from "@/types";
+import type { Me, PositionListParams } from "@/types";
 
 export function useMe() {
   return useQuery({ queryKey: queryKeys.me.profile(), queryFn: meApi.get });
@@ -29,6 +29,18 @@ export function useMyPositions(params?: PositionListParams) {
 
 export function useModQueue() {
   return useQuery({ queryKey: queryKeys.me.modQueue(), queryFn: meApi.modQueue });
+}
+
+export function useDeposit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: meApi.deposit,
+    onSuccess: (wallet) => {
+      qc.setQueryData<Me>(queryKeys.me.profile(), (me) => (me ? { ...me, balance: wallet.balance } : me));
+      qc.setQueryData(queryKeys.me.wallet(), wallet);
+      qc.invalidateQueries({ queryKey: queryKeys.me.transactions() });
+    },
+  });
 }
 
 export function useLogin() {
