@@ -2,14 +2,44 @@
 
 ## Scope
 
-This is a compilable Go skeleton, not a running API. Source files contain package
-declarations and responsibility comments only, except for an empty main function.
-Fiber, PostgreSQL driver, authentication libraries, and other dependencies will
-be added when their implementation starts.
+A Fiber + pgx API server. Implemented so far (see [api.md](docs/api.md)):
 
-Four PostgreSQL migration pairs now define the proposed MVP schema. Review the
-[database handoff](docs/database.md), verify the migrations using the isolated
-test script, then configure the application's PostgreSQL connection as the next stage.
+- Auth: `POST /auth/register`, `/auth/login`, `/auth/logout` (Ed25519-signed JWT in an HTTP-only cookie).
+  Registration creates the user, wallet, and `INITIAL_BONUS` ledger entry in one
+  transaction and also signs the user in.
+- Users: `GET /me`, `PATCH /me`, `GET /users/:id`.
+- Communities: list/create/join/get/update, invite-code regeneration, member list,
+  role changes, and remove/leave (a community always keeps at least one admin).
+
+Markets, predictions, points, transactions, settlement, and leaderboard are still
+skeletons. Review the [database handoff](docs/database.md) before writing queries.
+
+## Running locally
+
+Apply the migrations first (see [migrations/README.md](migrations/README.md)), then:
+
+```sh
+DATABASE_URL=postgres://user@localhost:5432/oracle?sslmode=disable \
+JWT_PRIVATE_KEY="$(cat jwt_ed25519.pem)" \
+go run ./cmd/server
+```
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | required | PostgreSQL connection string |
+| `JWT_PRIVATE_KEY` | required | Ed25519 PKCS#8 PEM (`openssl genpkey -algorithm ed25519 -out jwt_ed25519.pem`). Literal `\n` is accepted for one-line env files. Sessions are EdDSA JWTs verified with the derived public key |
+| `PORT` | `8080` | |
+| `APP_ENV` | `development` | `production` turns on secure cookies by default |
+| `SESSION_TTL` | `168h` | Cookie and JWT lifetime |
+| `COOKIE_NAME` | `oracle_session` | |
+| `COOKIE_SECURE` | `true` in production | |
+| `COOKIE_SAME_SITE` | `Lax` | `None` requires `COOKIE_SECURE=true` |
+| `COOKIE_DOMAIN` | unset | |
+| `CORS_ORIGINS` | unset | Comma-separated; only needed if the browser calls the API cross-origin |
+| `INITIAL_BALANCE` | `1000` | Starting grant recorded as `INITIAL_BONUS` |
+
+Errors always use `{ "error": { "code", "message", "fields"? } }`. Besides the codes
+in api.md, communities return `LAST_ADMIN` (409) when a change would leave no admin.
 
 ## Layout
 
@@ -55,8 +85,14 @@ go test ./...
 go vet ./...
 ```
 
-There are no Go tests or external Go dependencies yet; these commands currently
-verify that the scaffold compiles and passes static checks. For database migration
-tests, see [migrations/README.md](migrations/README.md).
+The API integration tests in `internal/router` are skipped unless
+`TEST_DATABASE_URL` points at a migrated, **disposable** database (they truncate
+every table):
+
+```sh
+TEST_DATABASE_URL=postgres://user@localhost:5432/oracle_test?sslmode=disable go test -p 1 ./...
+```
+
+For database migration tests, see [migrations/README.md](migrations/README.md).
 
 See [team coordination](docs/team-coordination.md) before starting implementation.
