@@ -27,6 +27,10 @@ export function useMyPositions(params?: PositionListParams) {
   });
 }
 
+export function useModQueue() {
+  return useQuery({ queryKey: queryKeys.me.modQueue(), queryFn: meApi.modQueue });
+}
+
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation({

@@ -41,14 +41,16 @@ export function useMarketActivity(marketId: ID) {
   });
 }
 
-export function useCreateMarket(communityId: ID) {
+export function useCreateMarket() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateMarketRequest) => marketsApi.create(communityId, body),
+    mutationFn: ({ communityId, body }: { communityId: ID; body: CreateMarketRequest }) =>
+      marketsApi.create(communityId, body),
     onSuccess: (market) => {
       qc.setQueryData(queryKeys.markets.detail(market.id), market);
       qc.invalidateQueries({ queryKey: queryKeys.markets.all });
-      qc.invalidateQueries({ queryKey: queryKeys.communities.detail(communityId) });
+      qc.invalidateQueries({ queryKey: queryKeys.communities.all });
+      qc.invalidateQueries({ queryKey: queryKeys.me.modQueue() });
     },
   });
 }

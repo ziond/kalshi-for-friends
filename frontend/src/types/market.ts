@@ -5,6 +5,7 @@ import type {
   MarketType,
   PaginationParams,
   PositionResult,
+  Visibility,
 } from "./common";
 import type { UserSummary } from "./user";
 
@@ -13,7 +14,7 @@ export interface MarketOption {
   text: string;
   totalAmount: number;
   positionCount: number;
-  /** totalAmount / market pool, 0–1 (even split when the pool is empty). */
+  /** totalAmount / market pool, 0â€“1 (even split when the pool is empty). */
   probability: number;
   /** null until the market is resolved. */
   isWinner: boolean | null;
@@ -29,6 +30,8 @@ export interface MyStake {
 export interface MarketSummary {
   id: ID;
   communityId: ID;
+  communityName: string;
+  communityVisibility: Visibility;
   title: string;
   marketType: MarketType;
   status: MarketStatus;
@@ -37,6 +40,8 @@ export interface MarketSummary {
   participantCount: number;
   options: MarketOption[];
   creator: UserSummary;
+  /** Who validates the outcome once the market closes. */
+  moderator: UserSummary;
   /** null if the current user hasn't bet. */
   myStake: MyStake | null;
 }
@@ -54,10 +59,18 @@ export interface MarketPermissions {
   canCancel: boolean;
 }
 
+/** One point on the "probability over time" chart. */
+export interface PricePoint {
+  at: ISODate;
+  /** optionId -> probability (0–1). */
+  probabilities: Record<ID, number>;
+}
+
 export interface MarketDetail extends MarketSummary {
   description: string | null;
-  moderator: UserSummary;
   settlement: Settlement | null;
+  /** Oldest first. The last point matches the options' current probabilities. */
+  history: PricePoint[];
   createdAt: ISODate;
   updatedAt: ISODate;
   permissions: MarketPermissions;
@@ -92,6 +105,17 @@ export interface Position {
 
 export interface MarketListParams extends PaginationParams {
   status?: MarketStatus;
+  /** Feed only: PRIVATE = my private communities, PUBLIC = all public communities. */
+  visibility?: Visibility;
+  sort?: "volume" | "newest";
+}
+
+/** Markets the current user is the assigned moderator for. */
+export interface ModQueue {
+  /** Closed (LOCKED) and waiting for a resolve/cancel decision. */
+  pending: MarketSummary[];
+  /** Still OPEN. */
+  active: MarketSummary[];
 }
 
 export interface PositionListParams extends PaginationParams {
@@ -104,7 +128,7 @@ export interface CreateMarketRequest {
   marketType: MarketType;
   /** Must be in the future. */
   deadline: ISODate;
-  /** Required for MULTIPLE_CHOICE (2–10). Ignored for BINARY — backend creates YES/NO. */
+  /** Required for MULTIPLE_CHOICE (2â€“10). Ignored for BINARY â€” backend creates YES/NO. */
   options?: string[];
   /** Defaults to the creator. Must be a MODERATOR/ADMIN of the community. */
   moderatorId?: ID;

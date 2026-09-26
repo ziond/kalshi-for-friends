@@ -8,6 +8,7 @@ export const queryKeys = {
     profile: () => [...queryKeys.me.all, "profile"] as const,
     wallet: () => [...queryKeys.me.all, "wallet"] as const,
     transactions: () => [...queryKeys.me.all, "transactions"] as const,
+    modQueue: () => [...queryKeys.me.all, "mod-queue"] as const,
     positions: (params?: PositionListParams) =>
       [...queryKeys.me.all, "positions", params ?? {}] as const,
   },
@@ -17,6 +18,8 @@ export const queryKeys = {
   communities: {
     all: ["communities"] as const,
     list: () => [...queryKeys.communities.all, "list"] as const,
+    discover: () => [...queryKeys.communities.all, "discover"] as const,
+    invite: (inviteCode: string) => [...queryKeys.communities.all, "invite", inviteCode] as const,
     detail: (communityId: ID) => [...queryKeys.communities.all, communityId] as const,
     members: (communityId: ID) =>
       [...queryKeys.communities.detail(communityId), "members"] as const,

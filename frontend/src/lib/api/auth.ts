@@ -2,6 +2,7 @@ import type {
   ID,
   LoginRequest,
   Me,
+  ModQueue,
   Paginated,
   PaginationParams,
   Position,
@@ -26,6 +27,7 @@ export const meApi = {
   positions: (params?: PositionListParams) =>
     api.get<Paginated<Position>>("/me/positions", { query: { ...params } }),
   wallet: () => api.get<Wallet>("/me/wallet"),
+  modQueue: () => api.get<ModQueue>("/me/mod-queue"),
   transactions: (params?: PaginationParams) =>
     api.get<Paginated<Transaction>>("/me/transactions", { query: { ...params } }),
 };

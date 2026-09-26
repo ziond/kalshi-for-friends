@@ -21,6 +21,10 @@ Status: **draft** — built from the database schema; revisit once screens are f
 | 9 | `CANCELLED` markets | Refund every position with `REFUND` transactions. No settlement row |
 | 10 | Wallets are global, leaderboards are per community | Community leaderboards are computed from positions + settlements within that community. `users.prediction_score` stays global |
 | 11 | `BINARY` options | Backend auto-creates `YES` / `NO`; the client never sends them |
+| 12 | Public vs private communities (from the Huddle design) | Add `communities.visibility VARCHAR(10) NOT NULL` (`PUBLIC` / `PRIVATE`). Public ones appear in Discover and can be joined directly; private ones need an invite code |
+| 13 | Who moderates a market | **Public** community: the community's `MODERATOR`s (chosen at creation) resolve all its markets, and `moderatorId` is ignored. **Private** community: the creator picks any member as `markets.moderator_id` per market |
+| 14 | When moderators act | The design only lets the moderator resolve or nullify once the market is `LOCKED` (past its deadline). "Nullify" = cancel + refund |
+| 15 | "Probability over time" chart | Needs history. Add `market_price_snapshots(market_id, taken_at, probabilities JSONB)`, and write a row on market creation and after every position. Alternatively, rebuild the history from `positions` on read |
 
 ## 2. Conventions
 
@@ -44,6 +48,7 @@ Status: **draft** — built from the database schema; revisit once screens are f
 type ID = number;
 type ISODate = string;
 type Role = 'MEMBER' | 'MODERATOR' | 'ADMIN';
+type Visibility = 'PUBLIC' | 'PRIVATE';
 type MarketType = 'BINARY' | 'MULTIPLE_CHOICE';
 type MarketStatus = 'OPEN' | 'LOCKED' | 'RESOLVED' | 'CANCELLED';
 type TransactionType = 'INITIAL_BONUS' | 'PLACE_POSITION' | 'WIN_REWARD' | 'LOSS' | 'REFUND';
@@ -75,15 +80,23 @@ interface CommunitySummary {
   id: ID;
   name: string;
   description: string | null;
+  visibility: Visibility;
   memberCount: number;
   openMarketCount: number;
-  myRole: Role;
+  moderators: UserSummary[];   // community-level moderators
+  myRole: Role | null;         // null when not a member (Discover)
   createdAt: ISODate;
 }
 
 interface CommunityDetail extends CommunitySummary {
   creator: UserSummary;
   inviteCode: string | null;   // only returned to MODERATOR/ADMIN
+}
+
+interface InvitePreview {      // shown on /invite/:code before joining
+  inviteCode: string;
+  community: Pick<CommunitySummary, 'id' | 'name' | 'description' | 'visibility' | 'memberCount' | 'moderators'>;
+  alreadyMember: boolean;
 }
 
 interface CommunityMember { user: UserSummary; role: Role; joinedAt: ISODate; }
@@ -112,14 +125,17 @@ interface MyStake { optionId: ID; amount: number; potentialPayout: number; }
 interface MarketSummary {
   id: ID;
   communityId: ID;
+  communityName: string;       // cards show the community pill
+  communityVisibility: Visibility;
   title: string;
   marketType: MarketType;
   status: MarketStatus;
   deadline: ISODate;
-  totalPool: number;
+  totalPool: number;           // shown as "volume"
   participantCount: number;
   options: MarketOption[];
   creator: UserSummary;
+  moderator: UserSummary;
   myStake: MyStake | null;     // null if the current user hasn't bet
 }
 
@@ -130,13 +146,23 @@ interface Settlement {
   notes: string | null;
 }
 
+interface PricePoint {
+  at: ISODate;
+  probabilities: Record<ID, number>;  // optionId -> 0–1
+}
+
 interface MarketDetail extends MarketSummary {
   description: string | null;
-  moderator: UserSummary;
   settlement: Settlement | null;
+  history: PricePoint[];       // oldest first; last point = current probabilities
   createdAt: ISODate;
   updatedAt: ISODate;
   permissions: { canBet: boolean; canResolve: boolean; canCancel: boolean };
+}
+
+interface ModQueue {           // markets the current user moderates
+  pending: MarketSummary[];    // LOCKED, waiting for resolve/nullify
+  active: MarketSummary[];     // still OPEN
 }
 
 interface MarketActivity {     // "Sarah put 150 on John" feed
@@ -180,7 +206,12 @@ interface RegisterRequest   { username: string; email: string; password: string;
 interface LoginRequest      { email: string; password: string; }
 interface UpdateMeRequest   { username?: string; avatarUrl?: string; }
 
-interface CreateCommunityRequest  { name: string; description?: string; }
+interface CreateCommunityRequest {
+  name: string;
+  description?: string;
+  visibility: Visibility;
+  moderatorUsernames?: string[]; // PUBLIC only; creator is always included
+}
 interface UpdateCommunityRequest  { name?: string; description?: string; }
 interface JoinCommunityRequest    { inviteCode: string; }
 interface UpdateMemberRoleRequest { role: Role; }
@@ -191,7 +222,15 @@ interface CreateMarketRequest {
   marketType: MarketType;
   deadline: ISODate;           // must be in the future
   options?: string[];          // required for MULTIPLE_CHOICE (2–10), ignored for BINARY
-  moderatorId?: ID;            // defaults to creator; must be a MODERATOR/ADMIN member
+  moderatorId?: ID;            // PRIVATE communities only: any member, defaults to creator
+}
+
+interface MarketListParams {   // query string for GET /markets
+  status?: MarketStatus;
+  visibility?: Visibility;     // PRIVATE = my private communities, PUBLIC = all public ones
+  sort?: 'volume' | 'newest';  // default volume
+  cursor?: string;
+  limit?: number;
 }
 
 interface PlacePositionRequest { optionId: ID; amount: number; }  // 1 <= amount <= balance
@@ -215,6 +254,7 @@ All routes are prefixed with `/api/v1`.
 | GET | `/me/positions?status=open\|settled&cursor=` | — | `Paginated<Position>` |
 | GET | `/me/wallet` | — | `Wallet` |
 | GET | `/me/transactions?cursor=` | — | `Paginated<Transaction>` |
+| GET | `/me/mod-queue` | — | `ModQueue` |
 | GET | `/users/:id` | — | `UserProfile` |
 
 ### Communities
@@ -223,8 +263,11 @@ All routes are prefixed with `/api/v1`.
 |---|---|---|---|---|
 | GET | `/communities` | any | — | `CommunitySummary[]` (mine) |
 | POST | `/communities` | any | `CreateCommunityRequest` | `CommunityDetail` — creator becomes ADMIN |
-| POST | `/communities/join` | any | `JoinCommunityRequest` | `CommunityDetail` |
-| GET | `/communities/:id` | member | — | `CommunityDetail` |
+| GET | `/communities/discover` | any | — | `CommunitySummary[]` — all PUBLIC communities, joined or not |
+| POST | `/communities/join` | any | `JoinCommunityRequest` | `CommunityDetail` — join via invite code |
+| GET | `/invites/:code` | any | — | `InvitePreview` |
+| GET | `/communities/:id` | member, or anyone if PUBLIC | — | `CommunityDetail` |
+| POST | `/communities/:id/join` | any, PUBLIC only | — | `CommunityDetail` |
 | PATCH | `/communities/:id` | admin | `UpdateCommunityRequest` | `CommunityDetail` |
 | POST | `/communities/:id/invite-code` | admin | — | `{ inviteCode: string }` — issues a new code |
 | GET | `/communities/:id/members` | member | — | `CommunityMember[]` |
@@ -236,14 +279,14 @@ All routes are prefixed with `/api/v1`.
 
 | Method | Route | Who | Body | Returns |
 |---|---|---|---|---|
-| GET | `/markets?status=&cursor=` | any | — | `Paginated<MarketSummary>` — home feed across my communities |
-| GET | `/communities/:id/markets?status=&cursor=` | member | — | `Paginated<MarketSummary>` |
+| GET | `/markets?status=&visibility=&sort=&cursor=&limit=` | any | — | `Paginated<MarketSummary>` — home "trending" sections (see `MarketListParams`) |
+| GET | `/communities/:id/markets?status=&cursor=` | member, or anyone if PUBLIC | — | `Paginated<MarketSummary>` |
 | POST | `/communities/:id/markets` | member | `CreateMarketRequest` | `MarketDetail` |
 | GET | `/markets/:id` | member | — | `MarketDetail` |
 | GET | `/markets/:id/activity?cursor=` | member | — | `Paginated<MarketActivity>` |
 | POST | `/markets/:id/positions` | member, while OPEN | `PlacePositionRequest` | `{ position: Position; market: MarketDetail; balance: number }` |
-| POST | `/markets/:id/resolve` | market moderator or community admin | `ResolveMarketRequest` | `MarketDetail` |
-| POST | `/markets/:id/cancel` | market moderator or community admin | `CancelMarketRequest` | `MarketDetail` |
+| POST | `/markets/:id/resolve` | market moderator, while LOCKED | `ResolveMarketRequest` | `MarketDetail` |
+| POST | `/markets/:id/cancel` | market moderator, while LOCKED ("Nullify") | `CancelMarketRequest` | `MarketDetail` |
 
 `POST /markets/:id/positions` returns the updated market and new balance so the UI can refresh odds and the wallet without a second fetch.
 

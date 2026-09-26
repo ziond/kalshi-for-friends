@@ -7,6 +7,9 @@ export type ISODate = string;
 
 export type Role = "MEMBER" | "MODERATOR" | "ADMIN";
 
+/** Public communities are listed in Discover; private ones are invite-only. */
+export type Visibility = "PUBLIC" | "PRIVATE";
+
 export type MarketType = "BINARY" | "MULTIPLE_CHOICE";
 
 export type MarketStatus = "OPEN" | "LOCKED" | "RESOLVED" | "CANCELLED";

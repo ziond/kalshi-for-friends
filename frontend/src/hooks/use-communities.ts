@@ -9,6 +9,10 @@ export function useCommunities() {
   return useQuery({ queryKey: queryKeys.communities.list(), queryFn: communitiesApi.list });
 }
 
+export function useDiscoverCommunities() {
+  return useQuery({ queryKey: queryKeys.communities.discover(), queryFn: communitiesApi.discover });
+}
+
 export function useCommunity(communityId: ID) {
   return useQuery({
     queryKey: queryKeys.communities.detail(communityId),
@@ -16,10 +20,11 @@ export function useCommunity(communityId: ID) {
   });
 }
 
-export function useCommunityMembers(communityId: ID) {
+export function useCommunityMembers(communityId: ID | undefined) {
   return useQuery({
-    queryKey: queryKeys.communities.members(communityId),
-    queryFn: () => communitiesApi.members(communityId),
+    queryKey: queryKeys.communities.members(communityId ?? 0),
+    queryFn: () => communitiesApi.members(communityId!),
+    enabled: communityId !== undefined,
   });
 }
 
@@ -30,21 +35,33 @@ export function useLeaderboard(communityId: ID) {
   });
 }
 
-export function useCreateCommunity() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: communitiesApi.create,
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.communities.all }),
+export function useInvitePreview(inviteCode: string) {
+  return useQuery({
+    queryKey: queryKeys.communities.invite(inviteCode),
+    queryFn: () => communitiesApi.invitePreview(inviteCode),
   });
 }
 
-export function useJoinCommunity() {
+/** Joining changes which communities and markets the user can see. */
+function useInvalidateMembership() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: communitiesApi.join,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.communities.all });
-      qc.invalidateQueries({ queryKey: queryKeys.markets.all });
-    },
-  });
+  return () => {
+    qc.invalidateQueries({ queryKey: queryKeys.communities.all });
+    qc.invalidateQueries({ queryKey: queryKeys.markets.all });
+  };
+}
+
+export function useCreateCommunity() {
+  const invalidate = useInvalidateMembership();
+  return useMutation({ mutationFn: communitiesApi.create, onSuccess: invalidate });
+}
+
+export function useJoinCommunity() {
+  const invalidate = useInvalidateMembership();
+  return useMutation({ mutationFn: communitiesApi.join, onSuccess: invalidate });
+}
+
+export function useJoinByInvite() {
+  const invalidate = useInvalidateMembership();
+  return useMutation({ mutationFn: communitiesApi.joinByCode, onSuccess: invalidate });
 }

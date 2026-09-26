@@ -1,26 +1,36 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Huddle design tokens (from the Claude Design file). Light theme only. */
+@theme {
+  --font-sans: var(--font-nunito), system-ui, sans-serif;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-canvas: #fbf7f0;
+  --color-ink: #1c1b19;
+  --color-muted: #6b6459;
+  --color-faint: #a39c90;
+  --color-line: rgb(28 27 25 / 0.1);
+  --color-hover: rgb(28 27 25 / 0.05);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-brand: #ff5a36;
+  --color-brand-hover: #e14a26;
+  --color-brand-soft: #fff4ec;
+  --color-brand-dark: #b8431e;
+
+  --color-yes: #2f9e5b;
+  --color-yes-dark: #1e7a44;
+  --color-no: #e2574c;
+  --color-private: #7c5cfc;
+  --color-gold: #f2a93b;
+  --color-blue: #3b7df2;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
 }

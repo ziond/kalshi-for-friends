@@ -5,6 +5,7 @@ import type {
   CreateCommunityRequest,
   ID,
   InviteCodeResponse,
+  InvitePreview,
   JoinCommunityRequest,
   LeaderboardEntry,
   UpdateCommunityRequest,
@@ -13,9 +14,18 @@ import type {
 import { api } from "./client";
 
 export const communitiesApi = {
+  /** Communities the current user belongs to. */
   list: () => api.get<CommunitySummary[]>("/communities"),
+  /** All public communities, joined or not. */
+  discover: () => api.get<CommunitySummary[]>("/communities/discover"),
   create: (body: CreateCommunityRequest) => api.post<CommunityDetail>("/communities", body),
-  join: (body: JoinCommunityRequest) => api.post<CommunityDetail>("/communities/join", body),
+  /** Join a private community with an invite code. */
+  joinByCode: (body: JoinCommunityRequest) =>
+    api.post<CommunityDetail>("/communities/join", body),
+  /** Join a public community directly. */
+  join: (communityId: ID) => api.post<CommunityDetail>(`/communities/${communityId}/join`),
+  invitePreview: (inviteCode: string) =>
+    api.get<InvitePreview>(`/invites/${encodeURIComponent(inviteCode)}`),
   get: (communityId: ID) => api.get<CommunityDetail>(`/communities/${communityId}`),
   update: (communityId: ID, body: UpdateCommunityRequest) =>
     api.patch<CommunityDetail>(`/communities/${communityId}`, body),

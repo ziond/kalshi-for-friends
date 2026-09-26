@@ -1,20 +1,16 @@
-import type { ApiErrorBody, ApiErrorCode } from "@/types";
+import type { ApiErrorBody } from "@/types";
+import { ApiError } from "./errors";
+import { mockRequest } from "./mock/handlers";
+
+export { ApiError };
 
 // Requests go to /api/v1 on the Next.js origin; next.config.ts rewrites them
 // to the Go backend, so the auth cookie is same-origin.
 const BASE_PATH = "/api/v1";
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: ApiErrorCode,
-    message: string,
-    public fields?: Record<string, string>,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+// Until the Go API is up, serve responses from the in-memory mock (src/lib/api/mock).
+// Set NEXT_PUBLIC_API_MOCK=false to hit the real backend.
+const USE_MOCK = process.env.NEXT_PUBLIC_API_MOCK !== "false";
 
 type Query = Record<string, string | number | boolean | undefined>;
 
@@ -24,13 +20,12 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-function buildUrl(path: string, query?: Query): string {
-  const params = new URLSearchParams();
+function cleanQuery(query?: Query): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(query ?? {})) {
-    if (value !== undefined) params.set(key, String(value));
+    if (value !== undefined) out[key] = String(value);
   }
-  const qs = params.toString();
-  return `${BASE_PATH}${path}${qs ? `?${qs}` : ""}`;
+  return out;
 }
 
 async function request<T>(
@@ -38,7 +33,11 @@ async function request<T>(
   path: string,
   { body, query, signal }: RequestOptions = {},
 ): Promise<T> {
-  const res = await fetch(buildUrl(path, query), {
+  const params = cleanQuery(query);
+  if (USE_MOCK) return mockRequest<T>(method, path, params, body);
+
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE_PATH}${path}${qs ? `?${qs}` : ""}`, {
     method,
     signal,
     credentials: "include",
