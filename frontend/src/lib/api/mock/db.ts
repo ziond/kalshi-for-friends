@@ -272,3 +272,22 @@ export const markets: MarketRow[] = [
     "Lifetime domestic gross comparison.",
     [{ user: "Filmfan", side: "No", amount: 250, hoursAgo: 4 }]),
 ];
+
+// ---- reset (used by tests) ----
+
+const seed = structuredClone({ users, communities, markets, positions, wallet, optionSeq, positionSeq });
+
+function refill<T>(target: T[], source: T[]) {
+  target.splice(0, target.length, ...structuredClone(source));
+}
+
+/** Restore the seeded data in place, so modules holding these arrays see the reset. */
+export function resetMockDb() {
+  refill(users, seed.users);
+  refill(communities, seed.communities);
+  refill(markets, seed.markets);
+  refill(positions, seed.positions);
+  Object.assign(wallet, seed.wallet);
+  optionSeq = seed.optionSeq;
+  positionSeq = seed.positionSeq;
+}
