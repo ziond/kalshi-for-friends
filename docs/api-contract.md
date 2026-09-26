@@ -51,7 +51,7 @@ type Role = 'MEMBER' | 'MODERATOR' | 'ADMIN';
 type Visibility = 'PUBLIC' | 'PRIVATE';
 type MarketType = 'BINARY' | 'MULTIPLE_CHOICE';
 type MarketStatus = 'OPEN' | 'LOCKED' | 'RESOLVED' | 'CANCELLED';
-type TransactionType = 'INITIAL_BONUS' | 'PLACE_POSITION' | 'WIN_REWARD' | 'LOSS' | 'REFUND';
+type TransactionType = 'INITIAL_BONUS' | 'DEPOSIT' | 'PLACE_POSITION' | 'WIN_REWARD' | 'LOSS' | 'REFUND';
 type PositionResult = 'PENDING' | 'WON' | 'LOST' | 'REFUNDED';
 
 interface Paginated<T> { items: T[]; nextCursor: string | null; }
@@ -233,6 +233,8 @@ interface MarketListParams {   // query string for GET /markets
   limit?: number;
 }
 
+interface DepositRequest { amount: number; }  // MVP: whole points, 1–1,000,000, no payment
+
 interface PlacePositionRequest { optionId: ID; amount: number; }  // 1 <= amount <= balance
 interface ResolveMarketRequest { winningOptionId: ID; notes?: string; }
 interface CancelMarketRequest  { reason?: string; }
@@ -253,6 +255,7 @@ All routes are prefixed with `/api/v1`.
 | PATCH | `/me` | `UpdateMeRequest` | `Me` |
 | GET | `/me/positions?status=open\|settled&cursor=` | — | `Paginated<Position>` |
 | GET | `/me/wallet` | — | `Wallet` |
+| POST | `/me/wallet/deposit` | `DepositRequest` | `Wallet` — MVP only: adds free points to the caller's own wallet and writes a `DEPOSIT` transaction. Remove or gate it before real money |
 | GET | `/me/transactions?cursor=` | — | `Paginated<Transaction>` |
 | GET | `/me/mod-queue` | — | `ModQueue` |
 | GET | `/users/:id` | — | `UserProfile` |
@@ -293,6 +296,11 @@ All routes are prefixed with `/api/v1`.
 ## 6. Transactional operations
 
 Each of these must run inside a single database transaction.
+
+**Deposit points (MVP)**
+1. Validate `1 ≤ amount ≤ 1,000,000` and that it's an integer.
+2. `UPDATE wallets SET balance = balance + $amount` for the caller's own wallet.
+3. Insert a `DEPOSIT` transaction with `balance_after`.
 
 **Place a position**
 1. Lock the wallet row (`SELECT … FOR UPDATE`).

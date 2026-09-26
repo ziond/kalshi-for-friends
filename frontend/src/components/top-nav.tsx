@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useMe, useModQueue } from "@/hooks/use-me";
 import { initial } from "@/lib/format";
+import { AddPoints } from "./add-points";
 import { cn } from "./ui";
 
 const TABS = [
@@ -82,10 +83,7 @@ export function TopNav() {
         </nav>
       </div>
       <div className="flex items-center gap-3.5">
-        <div className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-[13px] font-extrabold">
-          <span className="inline-block size-2 rounded-full bg-gold" />
-          {me ? `${me.balance.toLocaleString()} pts` : "—"}
-        </div>
+        <AddPoints />
         <CreateMenu />
         <Link href="/profile" aria-label="Your profile"
           className="flex size-[34px] items-center justify-center rounded-full bg-blue text-[13px] font-extrabold text-white">

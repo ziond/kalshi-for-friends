@@ -5,6 +5,14 @@ export interface Wallet {
   updatedAt: ISODate;
 }
 
+/** MVP only: users top up their own balance with any amount. */
+export interface DepositRequest {
+  /** Whole points, 1 to MAX_DEPOSIT. */
+  amount: number;
+}
+
+export const MAX_DEPOSIT = 1_000_000;
+
 export interface TransactionReference {
   type: "POSITION" | "MARKET";
   id: ID;
