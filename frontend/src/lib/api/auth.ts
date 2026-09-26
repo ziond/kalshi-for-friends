@@ -19,7 +19,10 @@ import { api } from "./client";
 export const authApi = {
   register: (body: RegisterRequest) => api.post<Me>("/auth/register", body),
   login: (body: LoginRequest) => api.post<Me>("/auth/login", body),
+  /** Clears both auth cookies on the backend. */
   logout: () => api.post<void>("/auth/logout"),
+  /** Swaps the refresh_token cookie for new access/refresh cookies. The client does this automatically on 401. */
+  refresh: () => api.post<void>("/auth/refresh"),
 };
 
 export const meApi = {

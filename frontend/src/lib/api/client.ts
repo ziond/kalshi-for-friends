@@ -1,4 +1,5 @@
 import type { ApiErrorBody } from "@/types";
+import { loginUrl } from "@/lib/auth/redirect";
 import { ApiError } from "./errors";
 import { mockRequest } from "./mock/handlers";
 
@@ -28,6 +29,23 @@ function cleanQuery(query?: Query): Record<string, string> {
   return out;
 }
 
+// Auth: the backend sets access_token / refresh_token as httpOnly cookies, which the
+// browser sends automatically. When the access token expires we get a 401, refresh
+// once, and retry. Concurrent 401s share a single refresh call.
+let refreshing: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  refreshing ??= fetch(`${BASE_PATH}/auth/refresh`, { method: "POST", credentials: "include" })
+    .then((res) => res.ok, () => false)
+    .finally(() => (refreshing = null));
+  return refreshing;
+}
+
+function redirectToLogin() {
+  if (typeof window === "undefined" || window.location.pathname === "/login") return;
+  window.location.assign(loginUrl(window.location.pathname + window.location.search));
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -37,13 +55,22 @@ async function request<T>(
   if (USE_MOCK) return mockRequest<T>(method, path, params, body);
 
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${BASE_PATH}${path}${qs ? `?${qs}` : ""}`, {
-    method,
-    signal,
-    credentials: "include",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const send = () =>
+    fetch(`${BASE_PATH}${path}${qs ? `?${qs}` : ""}`, {
+      method,
+      signal,
+      credentials: "include",
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+  let res = await send();
+
+  // Login/register/refresh return 401 for bad credentials; don't loop on those.
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    if (await refreshSession()) res = await send();
+    if (res.status === 401) redirectToLogin();
+  }
 
   if (!res.ok) {
     const data = (await res.json().catch(() => null)) as ApiErrorBody | null;
