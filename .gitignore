@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+*.pem
 
 # Go build and test output
 /backend/bin/
