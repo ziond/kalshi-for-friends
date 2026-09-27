@@ -75,12 +75,8 @@ PG_BIN=/Applications/Postgres.app/Contents/Versions/16/bin RUN_API_TESTS=1 bash 
 The script never uses the shared database URL. Tests truncate data only in that
 temporary cluster. On Windows, start a throwaway cluster with the PostgreSQL
 `initdb`/`pg_ctl` binaries instead, apply the migrations with `migrate`, and run
-`TEST_DATABASE_URL=… go test -p 1 ./...`; the full suite passed this way on
-PostgreSQL 18 on 2026-09-27.
-
-Known fixture issue: `tests/schema.sql` line 184 expects SQLSTATE 23503 when
-deleting a user, but the `ON DELETE RESTRICT` foreign keys raise 23001. The
-constraint behaves correctly; the expected code in the fixture needs updating.
+`TEST_DATABASE_URL=… go test -p 1 ./...`, then `psql -f tests/schema.sql`. The
+Go suite and the schema fixture passed this way on PostgreSQL 18 on 2026-09-27.
 
 The shared Supabase database is at migration 000010. Apply new migrations there
 before restarting an API that expects them. The API connects as the Supabase
