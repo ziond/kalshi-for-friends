@@ -5,14 +5,22 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { TrophyIcon } from "@/components/icons";
 import { MarketCard, MarketGrid } from "@/components/market-card";
-import { Avatar, BackLink, Button, Card, EmptyState, ErrorNote, SectionHeader, Skeleton, VisibilityBadge, inputClass } from "@/components/ui";
-import { useCommunity, useJoinCommunity } from "@/hooks/use-communities";
+import { Avatar, BackLink, Button, Card, EmptyState, ErrorNote, SectionHeader, Skeleton, VisibilityBadge, cn, inputClass } from "@/components/ui";
+import { useCommunity, useJoinCommunity, useRotateInviteCode } from "@/hooks/use-communities";
 import { useCommunityMarkets } from "@/hooks/use-markets";
-import type { CommunityDetail } from "@/types";
+import { useNow } from "@/hooks/use-now";
+import { formatCountdown } from "@/lib/format";
+import { INVITE_LINK_MINUTES, type CommunityDetail } from "@/types";
 
 function InviteModal({ community, onClose }: { community: CommunityDetail; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const rotate = useRotateInviteCode(community.id);
   const link = `${window.location.origin}/invite/${community.inviteCode}`;
+  const isCreator = community.myRole === "ADMIN";
+  // Unknown if the API doesn't send it yet; then we can only say how long links last.
+  const expiresAt = community.inviteExpiresAt ?? null;
+  const now = useNow(Boolean(expiresAt));
+  const expired = expiresAt ? Date.parse(expiresAt) <= now : false;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -25,20 +33,48 @@ function InviteModal({ community, onClose }: { community: CommunityDetail; onClo
     setCopied(true);
   };
 
+  const newLink = () => {
+    setCopied(false);
+    rotate.mutate();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div role="dialog" aria-modal aria-labelledby="invite-title" onClick={(e) => e.stopPropagation()}
         className="flex w-[440px] max-w-full flex-col gap-4 rounded-[24px] border border-line bg-surface p-6">
         <h2 id="invite-title" className="text-xl font-bold tracking-tight">Invite people to {community.name}</h2>
-        <p className="text-sm text-muted">Anyone with this link can join this private community.</p>
+        <p className="text-sm text-muted">
+          Anyone with this link can join this private community. Links work for {INVITE_LINK_MINUTES} minutes, then
+          you&apos;ll need a new one.
+        </p>
         <div className="flex gap-2">
-          <input readOnly value={link} onFocus={(e) => e.target.select()}
-            className={`${inputClass} text-xs text-muted`} />
-          <Button className="rounded-xl" onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
+          <input readOnly value={link} onFocus={(e) => e.target.select()} aria-label="Invite link"
+            className={cn(inputClass, "text-xs", expired ? "text-faint line-through" : "text-muted")} />
+          <Button className="rounded-xl" onClick={copy} disabled={expired}>{copied ? "Copied" : "Copy"}</Button>
         </div>
-        <Link href={`/invite/${community.inviteCode}`} className="text-sm font-semibold text-lime hover:text-lime-hover">
-          Preview what invitees see →
-        </Link>
+
+        <div role="status" className={cn("-mt-1 text-xs font-semibold", expired ? "text-no" : "text-muted")}>
+          {rotate.isSuccess && !expired && "New link ready. The old one no longer works. "}
+          {expiresAt
+            ? expired ? "This link has expired." : <>Expires in <span className="tabular-nums">{formatCountdown(expiresAt, now)}</span></>
+            : `This link works for ${INVITE_LINK_MINUTES} minutes after it's created.`}
+        </div>
+
+        {isCreator ? (
+          <Button variant={expired ? "primary" : "secondary"} className="rounded-xl py-2.5" onClick={newLink}
+            disabled={rotate.isPending}>
+            {rotate.isPending ? "Getting a new link…" : "Get a new link"}
+          </Button>
+        ) : expired && (
+          <p className="text-xs text-muted">Ask the community&apos;s creator for a new link.</p>
+        )}
+        <ErrorNote error={rotate.error} />
+
+        {!expired && (
+          <Link href={`/invite/${community.inviteCode}`} className="text-sm font-semibold text-lime hover:text-lime-hover">
+            Preview what invitees see →
+          </Link>
+        )}
         <button onClick={onClose} className="mt-1 cursor-pointer text-center text-sm font-semibold text-muted hover:text-ink">
           Close
         </button>

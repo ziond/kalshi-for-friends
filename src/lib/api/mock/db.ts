@@ -28,6 +28,8 @@ export interface CommunityRow {
   moderatorIds: ID[];
   memberIds: ID[];
   inviteCode: string;
+  /** The code works until then; POST /communities/:id/invite-code issues a new one. */
+  inviteExpiresAt: string;
   createdAt: string;
 }
 
@@ -119,6 +121,8 @@ function community(
     moderatorIds: moderators.map(uid),
     memberIds,
     inviteCode: `HUD${id}X7Q2P`,
+    // Like the backend's migration: seeded codes get one 15-minute window from startup.
+    inviteExpiresAt: iso(now + 15 * 60_000),
     createdAt: iso(now - (60 + id * 7) * DAY),
   };
 }

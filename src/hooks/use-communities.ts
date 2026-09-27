@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { communitiesApi } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
-import type { ID } from "@/types";
+import type { CommunityDetail, ID } from "@/types";
 
 export function useCommunities() {
   return useQuery({ queryKey: queryKeys.communities.list(), queryFn: communitiesApi.list });
@@ -32,6 +32,18 @@ export function useLeaderboard(communityId: ID) {
   return useQuery({
     queryKey: queryKeys.communities.leaderboard(communityId),
     queryFn: () => communitiesApi.leaderboard(communityId),
+  });
+}
+
+/** Issue a new invite link (creator only); the old one stops working. */
+export function useRotateInviteCode(communityId: ID) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => communitiesApi.rotateInviteCode(communityId),
+    onSuccess: ({ inviteCode, inviteExpiresAt }) => {
+      qc.setQueryData<CommunityDetail>(queryKeys.communities.detail(communityId), (c) =>
+        c ? { ...c, inviteCode, inviteExpiresAt: inviteExpiresAt ?? null } : c);
+    },
   });
 }
 

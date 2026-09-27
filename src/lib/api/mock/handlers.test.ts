@@ -272,6 +272,46 @@ describe("communities", () => {
   });
 });
 
+describe("invite link expiry", () => {
+  const expire = async (id: number) => {
+    const { communities } = await import("./db");
+    communities.find((c) => c.id === id)!.inviteExpiresAt = new Date(Date.now() - 1000).toISOString();
+  };
+
+  it("gives codes 15 minutes and shows the expiry to the creator", async () => {
+    const detail: CommunityDetail = await communitiesApi.get(1);
+    const left = Date.parse(detail.inviteExpiresAt!) - Date.now();
+    expect(left).toBeGreaterThan(0);
+    expect(left).toBeLessThanOrEqual(15 * 60_000);
+  });
+
+  it("rejects an expired code everywhere, without changing membership", async () => {
+    const { communities } = await import("./db");
+    communities.find((c) => c.id === 3)!.memberIds = [5, 6]; // Jordan not a member yet
+    await expire(3);
+    const { mockRequest } = await import("./handlers");
+
+    await expectApiError(communitiesApi.invitePreview("HUD3X7Q2P"), "INVALID_INVITE_CODE");
+    await expectApiError(mockRequest("GET", "/public/invites/HUD3X7Q2P", {}, undefined), "INVALID_INVITE_CODE");
+    await expectApiError(communitiesApi.joinByCode({ inviteCode: "HUD3X7Q2P" }), "INVALID_INVITE_CODE");
+    expect(communities.find((c) => c.id === 3)!.memberIds).toEqual([5, 6]);
+  });
+
+  it("issues a fresh 15-minute code to the creator and kills the old one", async () => {
+    await expire(1);
+    const fresh = await communitiesApi.rotateInviteCode(1);
+
+    expect(fresh.inviteCode).not.toBe("HUD1X7Q2P");
+    expect(Date.parse(fresh.inviteExpiresAt!) - Date.now()).toBeGreaterThan(15 * 60_000 - 5_000);
+    await expect(communitiesApi.invitePreview(fresh.inviteCode)).resolves.toMatchObject({ inviteCode: fresh.inviteCode });
+    await expectApiError(communitiesApi.invitePreview("HUD1X7Q2P"), "INVALID_INVITE_CODE");
+  });
+
+  it("only lets the creator issue a new code", async () => {
+    await expectApiError(communitiesApi.rotateInviteCode(5), "FORBIDDEN"); // Jordan is a moderator there
+  });
+});
+
 describe("public invite details", () => {
   it("returns only name, visibility and member count, without signing in", async () => {
     const { mockRequest } = await import("./handlers");

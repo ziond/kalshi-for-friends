@@ -58,6 +58,53 @@ describe("Community page", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("shows how long the invite link lasts and lets the creator get a new one", async () => {
+    navigation.params = { communityId: "1" };
+    const { user } = renderWithClient(<CommunityPage />);
+    await user.click(await screen.findByRole("button", { name: "Invite people" }));
+    const dialog = screen.getByRole("dialog");
+
+    expect(within(dialog).getByText(/Links work for 15 minutes/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("status")).toHaveTextContent(/^Expires in 1[45]:\d\d$/);
+
+    await user.click(within(dialog).getByRole("button", { name: "Get a new link" }));
+
+    await waitFor(() => expect(within(dialog).getByRole("textbox")).not.toHaveValue(`${window.location.origin}/invite/HUD1X7Q2P`));
+    expect(within(dialog).getByRole("status")).toHaveTextContent(/New link ready\. The old one no longer works\./);
+    const { mockRequest } = await import("@/lib/api/mock/handlers");
+    await expect(mockRequest("GET", "/public/invites/HUD1X7Q2P", {}, undefined)).rejects.toMatchObject({ code: "INVALID_INVITE_CODE" });
+  });
+
+  it("marks an expired link, blocks copying it, and replaces it", async () => {
+    const { communities } = await import("@/lib/api/mock/db");
+    communities.find((c) => c.id === 1)!.inviteExpiresAt = new Date(Date.now() - 1000).toISOString();
+    navigation.params = { communityId: "1" };
+    const { user } = renderWithClient(<CommunityPage />);
+    await user.click(await screen.findByRole("button", { name: "Invite people" }));
+    const dialog = screen.getByRole("dialog");
+
+    expect(within(dialog).getByRole("status")).toHaveTextContent("This link has expired.");
+    expect(within(dialog).getByRole("button", { name: "Copy" })).toBeDisabled();
+    expect(within(dialog).queryByRole("link", { name: /Preview what invitees see/ })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Get a new link" }));
+
+    expect(await within(dialog).findByText(/^1[45]:\d\d$/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Copy" })).toBeEnabled();
+  });
+
+  it("doesn't let moderators replace the link, and tells them who can", async () => {
+    const { communities } = await import("@/lib/api/mock/db");
+    communities.find((c) => c.id === 5)!.inviteExpiresAt = new Date(Date.now() - 1000).toISOString(); // Jordan moderates
+    navigation.params = { communityId: "5" };
+    const { user } = renderWithClient(<CommunityPage />);
+    await user.click(await screen.findByRole("button", { name: "Invite people" }));
+    const dialog = screen.getByRole("dialog");
+
+    expect(within(dialog).queryByRole("button", { name: "Get a new link" })).not.toBeInTheDocument();
+    expect(within(dialog).getByText("Ask the community's creator for a new link.")).toBeInTheDocument();
+  });
+
   it("lets non-members join a public community", async () => {
     navigation.params = { communityId: "6" };
     const { user } = renderWithClient(<CommunityPage />);

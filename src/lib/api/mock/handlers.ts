@@ -27,7 +27,7 @@ import type {
   Role,
   UserSummary,
 } from "@/types";
-import { DAILY_BONUS_POINTS, PAYOUT_GRACE_MINUTES } from "@/types";
+import { DAILY_BONUS_POINTS, INVITE_LINK_MINUTES, PAYOUT_GRACE_MINUTES } from "@/types";
 import { ApiError } from "../errors";
 import {
   ME,
@@ -69,6 +69,17 @@ function getCommunity(id: ID): CommunityRow {
   const c = communities.find((x) => x.id === id) ?? notFound("Community");
   if (c.visibility === "PRIVATE" && !roleOf(c, ME)) {
     throw new ApiError(403, "FORBIDDEN", "This community is invite-only");
+  }
+  return c;
+}
+
+const inviteExpiry = () => new Date(Date.now() + INVITE_LINK_MINUTES * 60_000).toISOString();
+
+/** The community an invite code belongs to; unknown, replaced and expired codes are all invalid. */
+function communityForInvite(code: string): CommunityRow {
+  const c = communities.find((x) => x.inviteCode === code);
+  if (!c || Date.parse(c.inviteExpiresAt) <= Date.now()) {
+    throw new ApiError(404, "INVALID_INVITE_CODE", "That invite link isn't valid");
   }
   return c;
 }
@@ -129,6 +140,7 @@ function communityDetail(c: CommunityRow): CommunityDetail {
     ...communitySummary(c),
     creator: user(c.creatorId),
     inviteCode: role === "ADMIN" || role === "MODERATOR" ? c.inviteCode : null,
+    inviteExpiresAt: role === "ADMIN" || role === "MODERATOR" ? c.inviteExpiresAt : null,
   };
 }
 
@@ -323,6 +335,7 @@ const routes: [string, RegExp, Handler][] = [
       moderatorIds: req.visibility === "PUBLIC" ? [ME, ...moderatorIds.filter((x) => x !== ME)] : [],
       memberIds: [ME, ...moderatorIds],
       inviteCode: `HUD${id}${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+      inviteExpiresAt: inviteExpiry(),
       createdAt: nowIso(),
     };
     communities.push(row);
@@ -330,9 +343,7 @@ const routes: [string, RegExp, Handler][] = [
   }],
 
   ["POST", /^\/communities\/join$/, (_, __, body) => {
-    const code = (body as { inviteCode: string }).inviteCode;
-    const c = communities.find((x) => x.inviteCode === code);
-    if (!c) throw new ApiError(404, "INVALID_INVITE_CODE", "That invite link isn't valid");
+    const c = communityForInvite((body as { inviteCode: string }).inviteCode);
     if (!c.memberIds.includes(ME)) {
       c.memberIds.push(ME);
       c.memberCount++;
@@ -342,14 +353,12 @@ const routes: [string, RegExp, Handler][] = [
 
   // No sign-in needed: link-preview bots and signed-out visitors use it.
   ["GET", /^\/public\/invites\/([^/]+)$/, ([code]): PublicInvite => {
-    const c = communities.find((x) => x.inviteCode === decodeURIComponent(code));
-    if (!c) throw new ApiError(404, "INVALID_INVITE_CODE", "That invite link isn't valid");
+    const c = communityForInvite(decodeURIComponent(code));
     return { inviteCode: c.inviteCode, community: { name: c.name, visibility: c.visibility, memberCount: c.memberCount } };
   }],
 
   ["GET", /^\/invites\/([^/]+)$/, ([code]): InvitePreview => {
-    const c = communities.find((x) => x.inviteCode === decodeURIComponent(code));
-    if (!c) throw new ApiError(404, "INVALID_INVITE_CODE", "That invite link isn't valid");
+    const c = communityForInvite(decodeURIComponent(code));
     const { id, name, description, visibility, memberCount, moderators } = communitySummary(c);
     return {
       inviteCode: c.inviteCode,
@@ -371,8 +380,10 @@ const routes: [string, RegExp, Handler][] = [
 
   ["POST", /^\/communities\/(\d+)\/invite-code$/, ([id]) => {
     const c = getCommunity(Number(id));
+    if (roleOf(c, ME) !== "ADMIN") throw new ApiError(403, "FORBIDDEN", "Only the community's creator can issue a new invite link");
     c.inviteCode = `HUD${c.id}${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-    return { inviteCode: c.inviteCode };
+    c.inviteExpiresAt = inviteExpiry();
+    return { inviteCode: c.inviteCode, inviteExpiresAt: c.inviteExpiresAt };
   }],
 
   ["GET", /^\/communities\/(\d+)\/members$/, ([id]): CommunityMember[] => {

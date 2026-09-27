@@ -3,6 +3,7 @@ import { GlobeIcon, LockIcon } from "@/components/icons";
 import { Card, Eyebrow } from "@/components/ui";
 import { initial } from "@/lib/format";
 import type { PublicInviteResult } from "@/lib/api/public-invite";
+import { INVITE_LINK_MINUTES } from "@/types";
 import { inviteCopy } from "./invite-copy";
 
 /** The invite for someone who isn't signed in: what they're joining, then sign up or log in. */
@@ -13,7 +14,10 @@ export function SignedOutInvite({ code, result }: { code: string; result: Public
     return (
       <Card className="flex w-full max-w-[480px] flex-col items-center gap-3 rounded-[26px] p-8 text-center">
         <h1 className="text-2xl font-bold tracking-tight">That invite link isn&apos;t valid</h1>
-        <p className="text-[15px] text-muted">It may have been replaced. Ask whoever sent it for a new one.</p>
+        <p className="text-[15px] text-muted">
+          Invite links only work for {INVITE_LINK_MINUTES} minutes, and a new link replaces the old one. Ask whoever
+          sent it for a fresh link.
+        </p>
         <Link href="/login" className="mt-2 text-sm font-semibold text-lime hover:text-lime-hover">
           Go to called it. →
         </Link>

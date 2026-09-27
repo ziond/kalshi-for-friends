@@ -26,8 +26,8 @@ export const getPublicInvite = cache(async (code: string): Promise<PublicInviteR
     const apiUrl = process.env.API_URL ?? "http://localhost:8080";
     const res = await fetch(`${apiUrl}/api/v1${path}`, {
       headers: TUNNEL_HEADERS,
-      // Member counts can lag a few minutes in previews; chat apps cache them anyway.
-      next: { revalidate: 300 },
+      // Codes expire after 15 minutes, so never serve a cached answer (matches the API's no-store).
+      cache: "no-store",
     });
     if (res.ok && (res.headers.get("content-type") ?? "").includes("application/json")) {
       return { status: "ok", invite: (await res.json()) as PublicInvite };

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Avatar, Button, Card, ErrorNote, Skeleton } from "@/components/ui";
 import { useInvitePreview, useJoinByInvite } from "@/hooks/use-communities";
+import { ApiError } from "@/lib/api";
+import { INVITE_LINK_MINUTES } from "@/types";
 
 /** The invite for a signed-in user: preview the community and accept. */
 export function InviteView({ code }: { code: string }) {
@@ -14,7 +16,16 @@ export function InviteView({ code }: { code: string }) {
   return (
     <div className="w-full max-w-[480px]">
       {isLoading && <Skeleton className="h-72" />}
-      {!isLoading && !invite && <ErrorNote error={error} />}
+      {!isLoading && !invite && (
+        <div className="flex flex-col gap-2">
+          <ErrorNote error={error} />
+          {error instanceof ApiError && error.code === "INVALID_INVITE_CODE" && (
+            <p className="text-sm text-muted">
+              Invite links only work for {INVITE_LINK_MINUTES} minutes. Ask whoever sent it for a fresh link.
+            </p>
+          )}
+        </div>
+      )}
       {invite && (
         <Card className="flex flex-col items-center gap-4 rounded-[26px] p-8 text-center">
           <Avatar id={invite.community.id} name={invite.community.name} size={64} rounded="rounded-[18px]" />

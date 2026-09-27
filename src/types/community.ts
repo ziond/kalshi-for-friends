@@ -15,10 +15,18 @@ export interface CommunitySummary {
   createdAt: ISODate;
 }
 
+/** How long an invite code works after it's issued (community created or code regenerated). */
+export const INVITE_LINK_MINUTES = 15;
+
 export interface CommunityDetail extends CommunitySummary {
   creator: UserSummary;
-  /** Only returned to MODERATOR/ADMIN; null for members. */
+  /** Only returned to MODERATOR/ADMIN; null for members. May already have expired. */
   inviteCode: string | null;
+  /**
+   * When inviteCode stops working (issued + INVITE_LINK_MINUTES); null when inviteCode is null.
+   * Optional until every backend sends it: the UI then just says links last 15 minutes.
+   */
+  inviteExpiresAt?: ISODate | null;
 }
 
 /** What someone sees on an invite link before joining. */
@@ -80,6 +88,9 @@ export interface UpdateMemberRoleRequest {
   role: Role;
 }
 
+/** POST /communities/:id/invite-code (ADMIN only). The previous code stops working. */
 export interface InviteCodeResponse {
   inviteCode: string;
+  /** Now + INVITE_LINK_MINUTES. Optional until every backend sends it. */
+  inviteExpiresAt?: ISODate;
 }
