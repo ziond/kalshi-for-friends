@@ -211,7 +211,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | COM-01 | A user can create a community with a name, optional description and privacy setting. | "Create → New community", "+ New community" on Home or Groups opens the form. Name is required (max 100 characters). Privacy defaults to Public. On success the user lands on the new community's page. | Must | Built (mock) | `community.test` |
 | COM-02 | The creator becomes the community's ADMIN. | Right after creation the creator's role is ADMIN, shown as "Creator" on their profile. | Must | Built (mock) | `api.test` |
 | COM-03 | Public communities have community moderators. | When creating a public community the creator can add moderators by username; the creator is always a moderator too. The page shows "moderated by <names>". | Must | Built (mock) | `community.test` |
-| COM-04 | Unknown moderator usernames are handled. | Adding a username that doesn't exist either shows an error or is ignored with a visible notice — never silently creates a user. | Should | Partial — mock silently ignores unknown names | Manual |
+| COM-04 | Unknown moderator usernames are caught before the community is created. | Each username added under "Choose moderators" is checked as it's added (case-insensitive). A match shows a green chip with ✓ and the stored spelling. No match shows a red chip "· not found" and the alert "No user called “X”. Check the spelling or remove them.", and "Create community" stays disabled until it's removed. Adding yourself says "You're a moderator automatically."; adding a name twice (any case) says "X is already on the list." If a name can't be checked, the chip stays neutral and the server's `VALIDATION_ERROR` ("Unknown username: X") appears under the moderators. Nothing is created and no user is ever created. | Should | Partial — frontend and mock built, and the Go API rejects unknown names on create; the API doesn't have `GET /users/lookup` yet, so names are only checked when you press Create | `community.test`, `api.test` |
 | COM-05 | Private communities don't have community moderators. | Choosing Private hides the moderator picker and explains that each market gets its own moderator. | Must | Built (mock) | `community.test` |
 | COM-06 | Private communities get an invite code. | A private community has a unique invite code from the moment it's created, valid for 15 minutes (INV-09). | Must | Built (mock) | `api.test` |
 | COM-07 | The community page shows the community's details. | Shows avatar, name, Public/Private badge, member count, moderators and description, plus a "Leaderboard" button for members (LDR-05). | Must | Built (mock) | `community.test`, `leaderboard.test` |
@@ -356,9 +356,10 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | FEED-02 | Home lists the user's communities. | "Your communities" lists every community the user belongs to with privacy and member count, each linking to it, plus "Explore →" (Discover) and "+ New community". On phones it sits below the market feed. | Must | Built (mock) | `home.test` |
 | FEED-03 | Home shows trending markets from the user's private communities. | "Your friends are betting" shows up to 3 OPEN markets from private communities the user belongs to, highest volume first. | Must | Built (mock) | `api.test`, `home.test` |
 | FEED-04 | Home shows trending markets from public communities. | "Trending in public communities" shows up to 3 OPEN markets from any public community (joined or not), highest volume first, with "See all →" to Discover. | Must | Built (mock) | `api.test`, `home.test` |
-| FEED-05 | Search filters the trending markets. | Typing in "Search markets or communities" shows only markets whose question or community name contains the text (case-insensitive). A section with no matches says "No markets match your search." | Should | Built (mock) | `home.test` |
-| FEED-06 | Search covers all markets, not only the ones shown. | Searching finds any market the user can see, not just the top 3 per section. | Could | Not built — filters the loaded top 3 only | — |
+| FEED-05 | Home search shows matching communities and markets. | Typing in "Search markets or communities" (after a short pause) replaces the feed with results: "Communities · N" then "Markets · N". Communities the user hasn't joined are tagged "Not joined". Up to 12 markets show, highest volume first, any status; if more match, the count reads "12+" with a hint to add another word. With no matches it says "Nothing matches “x”. Try another word, or check the spelling." The × button or Escape clears the search and brings the feed back. | Should | Built (mock) | `home.test` |
+| FEED-06 | Search covers all markets, not only the ones shown. | Markets are searched on the server with `GET /markets?q=`: title or community name contains the text (case-insensitive), across every public community plus the user's own communities. | Should | Built (mock + API) | `home.test`, `api.test` |
 | FEED-07 | Home prompts users to create a market. | A lime "Friend group forecast" card ("Someone's getting exposed today.") has "+ Create a market", linking to the create form. | Should | Built (mock) | `home.test` |
+| FEED-08 | Search finds communities too. | Results include the user's own communities (private ones too) and public communities from `GET /communities/discover?q=`, matching name or description (case-insensitive), without duplicates, the user's own first. Private communities the user isn't in never appear, and neither do their markets. | Should | Partial — frontend and mock built; the Go API ignores `q` on Discover, so the frontend filters the full public list itself (correct, but downloads every public community) | `home.test`, `api.test` |
 
 ### 3.14 Market activity (ACT)
 
@@ -595,10 +596,10 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 3 | Rounding remainder from payouts isn't distributed. | RES-06, DATA-05 | Implement in the backend's settlement transaction. |
 | 4 | Public-community non-members can bet in the mock. | BET-09 | Decide: must users join before betting? Recommended: yes. Enforce in backend and mock. |
 | 5 | Can a moderator bet on their own market? | §5 | Decide and add RES-13. |
-| 6 | Unknown moderator usernames are silently dropped. | COM-04 | Return a field error listing unknown names. |
+| 6 | ~~Unknown moderator usernames are silently dropped.~~ | COM-04 | Done: the Go API rejects them with a `moderatorUsernames` field error, and the create form shows it under the moderators. Remaining backend step: add `GET /users/lookup` so names are checked as they're typed. |
 | 7 | No UI for members, leaving, roles, invite reset, editing, transactions, other profiles. | COM-15–18, WAL-09, USR-07–08 | Not in the design mockups. Decide which are MVP. |
 | 8 | Market description can't be entered. | MKT-14 | Add a description field to the create form. |
-| 9 | Search only filters the three trending markets per section. | FEED-06 | Add a `q` parameter to `GET /markets` for server-side search. |
+| 9 | ~~Search only filters the three trending markets per section.~~ | FEED-06, FEED-08 | Done: Home searches markets on the server (`GET /markets?q=`, already in the Go API) and shows matching communities. Remaining backend step: support `q` on `GET /communities/discover` so the full public list isn't downloaded for every search. |
 | 10 | Prediction score formula agreed with Owen. | LDR-03 | Rounded accuracy × 100, excluding refunds; apply migration 000008 and run database integration tests. |
 | 11 | The faint label grey (#7F8A81) fails contrast on card and raised surfaces. | A11Y-06 | Lighten `--color-faint` to about #96A197 (passes on all three surfaces), or use the muted grey on cards. |
 | 12 | The daily bonus amount (1,000) and interval (24 hours) are fixed. | WAL-11 | Keep both as backend settings. The UI reads `nextDailyBonusAt` and the claimed amount from the API; only its wording ("Claim 1,000 pts") assumes 1,000. |
@@ -624,7 +625,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | AUTH | 24 | 15 | 4 | 0 | 5 | 15 |
 | USR | 8 | 6 | 0 | 2 | 0 | 4 |
 | WAL | 10 | 7 | 0 | 1 | 2 | 8 |
-| COM | 21 | 16 | 2 | 3 | 0 | 16 |
+| COM | 21 | 16 | 2 | 3 | 0 | 17 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
 | INV | 9 | 8 | 0 | 0 | 1 | 8 |
 | MKT | 15 | 14 | 1 | 0 | 0 | 10 |
@@ -633,7 +634,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | LCK | 4 | 4 | 0 | 0 | 0 | 3 |
 | RES | 18 | 16 | 0 | 1 | 1 | 16 |
 | MOD | 5 | 5 | 0 | 0 | 0 | 4 |
-| FEED | 7 | 6 | 0 | 1 | 0 | 6 |
+| FEED | 8 | 7 | 1 | 0 | 0 | 8 |
 | ACT | 3 | 3 | 0 | 0 | 0 | 3 |
 | LDR | 5 | 3 | 1 | 1 | 0 | 4 |
 | NAV | 8 | 7 | 1 | 0 | 0 | 4 |
@@ -644,6 +645,6 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | DATA | 8 | 0 | 1 | 0 | 7 | 4 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **215** | **168** | **15** | **10** | **22** | **148** |
+| **Total** | **216** | **169** | **16** | **9** | **22** | **151** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. Withdrawn requirements aren't counted. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.
