@@ -1,6 +1,6 @@
-# Huddle — Requirements Specification (MVP)
+# called it. — Requirements Specification (MVP)
 
-**Purpose:** the single list of what Huddle must do, written so every item can be checked as pass/fail. Use it to verify the frontend, the Go backend, and the two working together before calling the MVP viable.
+**Purpose:** the single list of what called it. (formerly Huddle) must do, written so every item can be checked as pass/fail. Use it to verify the frontend, the Go backend, and the two working together before calling the MVP viable.
 
 **Related docs:** [api-contract.md](api-contract.md) (the endpoint and type definitions these requirements refer to).
 
@@ -50,7 +50,7 @@ Every requirement has a stable ID like `MKT-12`. Reference it in test names, PRs
 
 ### 1.3 Status
 
-Status reflects the `dev` branch at the time of writing. The Go backend is not built yet, so every API-side rule is currently implemented **only in the frontend mock** (`frontend/src/lib/api/mock`).
+Status reflects the `frontend-dev` branch at the time of writing. The Go backend now runs separately, but unless a row says otherwise its behaviour hasn't been verified against these requirements yet: API-side rules marked **Built (mock)** are implemented and tested in the frontend mock (`src/lib/api/mock`).
 
 | Status | Meaning |
 |---|---|
@@ -62,7 +62,7 @@ Status reflects the `dev` branch at the time of writing. The Go backend is not b
 
 ### 1.4 Verified by
 
-The **Test** column names the automated test that covers the requirement (paths relative to `frontend/src/`). `Manual` means there is no automated test yet and it must be checked by hand. Run the automated suite with `cd frontend && npm test`.
+The **Test** column names the automated test that covers the requirement (paths relative to `src/`). `Manual` means there is no automated test yet and it must be checked by hand. Run the automated suite with `npm test` from the repository root.
 
 | Short name | File |
 |---|---|
@@ -78,6 +78,10 @@ The **Test** column names the automated test that covers the requirement (paths 
 | `jwt.test` | `lib/auth/jwt.test.ts` |
 | `proxy.test` | `proxy.test.ts` |
 | `client.test` | `lib/api/client.test.ts` |
+| `auth.test` | `app/(auth)/auth-forms.test.tsx` |
+| `leaderboard.test` | `app/(app)/leaderboard.test.tsx` |
+| `ranking.test` | `lib/leaderboard.test.ts` |
+| `live.test` | `app/(app)/markets/[marketId]/live.test.tsx` |
 
 ### 1.5 Glossary
 
@@ -90,12 +94,15 @@ The **Test** column names the automated test that covers the requirement (paths 
 | **Multiple-choice market** | A market with 2–10 custom outcomes. |
 | **Option / outcome** | One possible answer in a market. |
 | **Position / bet** | Points a user has put on one option. |
-| **Pool** | The total points bet across all options of a market (shown as "volume"). |
+| **Pool** | The total points bet across all options of a market (shown as "N pts staked" on cards and "Volume" in market info). |
 | **Probability** | An option's share of the pool, shown as a percentage. |
 | **Moderator** | The user who decides a market's real-world outcome. |
 | **Resolve / validate** | Declare the winning option and pay out. |
 | **Nullify / cancel** | Void a market and refund every bet. |
 | **Deadline / closes** | The time after which no more bets are accepted. |
+| **Win rate** | Share of a member's settled predictions (won or lost, not refunded) in a community that were correct. Ranks the community leaderboard. |
+| **Live market** | A market that can still change: OPEN (taking bets) or LOCKED (waiting for the moderator). Its page polls for updates. |
+| **Groups** | The app's name for the list of communities you belong to (`/communities`). |
 | **Role** | A user's rank in a community: `ADMIN` (the creator, shown as "Creator"), `MODERATOR` or `MEMBER`. |
 
 ---
@@ -121,14 +128,14 @@ The **Test** column names the automated test that covers the requirement (paths 
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| AUTH-01 | A visitor can create an account with a username, email and password. | Register form has all three fields, all required. On success the user is signed in and sent to Home (`/`). | Must | Built (mock) | Manual |
+| AUTH-01 | A visitor can create an account with a username, email and password. | Register form ("Join called it.") has all three fields, all required. On success the user is signed in and a full page load takes them to Home (`/`), or to `next` (AUTH-10). | Must | Built (mock) | `auth.test` |
 | AUTH-02 | Usernames are unique and at most 50 characters. | Registering with a taken username fails with a clear error and no account is created. The field won't accept more than 50 characters. | Must | Partial — length enforced in UI; uniqueness is backend only | Manual |
 | AUTH-03 | Emails are unique and valid. | Registering with an existing email or a malformed address fails with a clear error. | Must | Partial — format checked by the browser; uniqueness is backend only | Manual |
 | AUTH-04 | Passwords are at least 8 characters and never stored in plain text. | The form rejects passwords under 8 characters. The database stores only a hash (bcrypt or argon2). | Must | Partial — length in UI; hashing is backend only | Manual |
 | AUTH-05 | Every new account starts with 1,000 points. | Immediately after registering, the balance shows 1,000 pts and an `INITIAL_BONUS` transaction of +1,000 exists. | Must | Backend only | Manual |
-| AUTH-06 | A user can log in with email and password. | Correct credentials sign the user in and go to Home (or the `next` page, AUTH-10). Wrong credentials return `401` and show an error that doesn't reveal which field was wrong. | Must | Partial — mock accepts any credentials | `client.test` |
+| AUTH-06 | A user can log in with email and password. | Correct credentials sign the user in and a full page load takes them to Home (or the `next` page, AUTH-10). Wrong credentials return `401` and show an error that doesn't reveal which field was wrong. | Must | Partial — mock accepts any credentials | `auth.test`, `client.test` |
 | AUTH-07 | Login and register issue an access token and a refresh token as cookies. | Both responses set `access_token` and `refresh_token` cookies with `HttpOnly; SameSite=Lax; Path=/` (plus `Secure` outside localhost). Neither token is readable from JavaScript or stored in localStorage. | Must | Backend only | Manual |
-| AUTH-08 | A user can log out. | "Log out" calls `POST /auth/logout`, which expires both cookies; cached data is cleared and the user goes to `/login`. Visiting an app page afterwards redirects to login. | Must | Built (mock) | `account.test` |
+| AUTH-08 | A user can log out. | "Log out" on the profile calls `POST /auth/logout`, which expires both cookies; cached data is cleared and a full page load goes to `/login`. Visiting an app page afterwards redirects to login. | Must | Built (mock) | `account.test` |
 | AUTH-09 | Visitors can't see app pages. | With the real backend, opening any page except `/login` and `/register` without a valid access token (and no usable refresh token) redirects to `/login`. | Must | Built | `proxy.test` |
 | AUTH-10 | After logging in from a redirect, the user returns to where they were going. | Being redirected from `/markets/5?tab=x` goes to `/login?next=%2Fmarkets%2F5%3Ftab%3Dx`; signing in lands on `/markets/5?tab=x`. The register link keeps `next`. | Should | Built | `proxy.test`, `client.test` |
 | AUTH-11 | Invite links work for signed-out visitors. | A visitor opening `/invite/:code` is sent to log in or register, then lands back on the invite to accept it. | Should | Built | `proxy.test` |
@@ -142,18 +149,19 @@ The **Test** column names the automated test that covers the requirement (paths 
 | AUTH-19 | The refresh endpoint rotates tokens. | `POST /auth/refresh` with a valid `refresh_token` cookie returns `204` with new `access_token` and `refresh_token` cookies; the old refresh token stops working. A missing, expired or revoked refresh token returns `401`. | Must | Backend only | Manual |
 | AUTH-20 | Refresh tokens can be revoked. | Logging out (and, ideally, reuse of an already-rotated refresh token) invalidates the refresh token on the server, so a copied cookie can't mint new access tokens. | Should | Backend only | Manual |
 | AUTH-21 | Signed-in users skip the login pages. | Visiting `/login` or `/register` with a valid access token redirects to `next` (if given) or Home. | Could | Built | `proxy.test` |
-| AUTH-22 | Redirects after login stay on Huddle. | `next` is only followed if it's a same-site path; values like `https://evil.example` or `//evil.example` fall back to `/`. | Must | Built | `proxy.test` |
+| AUTH-22 | Redirects after login stay on the site. | `next` is only followed if it's a same-site path; values like `https://evil.example` or `//evil.example` fall back to `/`. | Must | Built | `proxy.test` |
 | AUTH-23 | The guard only runs against the real backend. | With `NEXT_PUBLIC_API_MOCK` not set to `false`, the route guard lets every request through so the mock works without tokens. | Should | Built | `proxy.test` |
+| AUTH-24 | Signing in, registering and logging out always land on the right page. | After login, register and logout the app does a full page load (not a client-side route change), so the route guard re-reads the new cookies instead of reusing a redirect cached before they changed. Login and register replace the history entry so Back doesn't reopen the form. | Must | Built | `auth.test`, `account.test` |
 
 ### 3.2 Profile and current user (USR)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| USR-01 | The profile page shows who the user is. | Shows avatar initial, username, "Member since <Mon YYYY>" and current balance. | Must | Built (mock) | `account.test` |
-| USR-02 | The profile lists the user's communities with their role. | Each community the user belongs to is listed and links to it. Role shows as "Creator", "Moderator" or "Member". | Must | Built (mock) | `account.test` |
+| USR-01 | The profile page shows who the user is. | Shows avatar initial, username, "Member since <Mon YYYY>" and four stat tiles: Balance, Accuracy, Called it (correct/total) and Score. | Must | Built (mock) | `account.test` |
+| USR-02 | The profile lists the user's communities with their role. | Each community the user belongs to is listed (privacy · member count) and links to it. Role shows as "Creator", "Moderator" or "Member". | Must | Built (mock) | `account.test` |
 | USR-03 | The profile lists open positions. | Every bet on a market that is still OPEN is listed with the market title, option and amount, linking to the market. Shows "No open bets." when empty. | Must | Built (mock) | `account.test` |
 | USR-04 | The profile lists bet history. | Every bet on a closed, resolved or nullified market is listed with its result: "Awaiting resolution", "Won +N pts", "Lost N pts" or "Refunded". Shows "No settled bets yet." when empty. | Must | Built (mock) | `account.test` |
-| USR-05 | The profile shows prediction accuracy once the user has settled bets. | After at least one won or lost bet, the header shows "N% accuracy" (correct ÷ total settled). Refunds don't count. | Should | Built (mock) | Manual |
+| USR-05 | The profile shows prediction accuracy once the user has settled bets. | After at least one won or lost bet, the Accuracy tile shows "N%" (correct ÷ total settled); before that it shows "—". Refunds don't count. | Should | Built (mock) | Manual |
 | USR-06 | The nav avatar opens the profile. | Clicking the round avatar in the top nav goes to `/profile`. | Must | Built (mock) | Manual |
 | USR-07 | A user can change their username or avatar. | `PATCH /me` updates them; the new name appears everywhere after refresh. | Could | Not built — API only, no UI | — |
 | USR-08 | A user can view another user's public profile. | `/users/:id` shows their username and prediction stats, not their email or balance. | Could | Not built — API only, no UI | — |
@@ -162,7 +170,7 @@ The **Test** column names the automated test that covers the requirement (paths 
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| WAL-01 | The current balance is always visible. | The top nav shows "<balance> pts" on every app page, formatted with thousands separators (e.g. "4,820 pts"). | Must | Built (mock) | `nav.test` |
+| WAL-01 | The current balance is always visible. | The top nav shows a balance pill (coin icon + number with thousands separators, e.g. "4,820") on every app page. Its accessible name reads "Balance 4,820 pts — add points". | Must | Built (mock) | `nav.test`, `points.test` |
 | WAL-02 | The balance updates immediately after anything that changes it. | Placing a bet, depositing, or a market resolving/refunding updates the nav balance without a page reload. | Must | Built (mock) | `points.test`, `market.test` |
 | WAL-03 | Users can add points to their own balance (MVP). | Clicking the balance opens "Add points". Choosing +500, +1,000, +5,000 or a custom amount adds exactly that many points and shows "Added N pts." | Must | Built (mock) | `points.test` |
 | WAL-04 | Deposits must be whole numbers from 1 to 1,000,000. | 0, negatives, decimals and values over 1,000,000 are rejected with `VALIDATION_ERROR` and the balance doesn't change. The Add button is disabled for invalid input. | Must | Built (mock) | `api.test`, `points.test` |
@@ -177,13 +185,13 @@ The **Test** column names the automated test that covers the requirement (paths 
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| COM-01 | A user can create a community with a name, optional description and privacy setting. | "+ Create → New community" opens the form. Name is required (max 100 characters). Privacy defaults to Public. On success the user lands on the new community's page. | Must | Built (mock) | `community.test` |
+| COM-01 | A user can create a community with a name, optional description and privacy setting. | "Create → New community", "+ New community" on Home or Groups opens the form. Name is required (max 100 characters). Privacy defaults to Public. On success the user lands on the new community's page. | Must | Built (mock) | `community.test` |
 | COM-02 | The creator becomes the community's ADMIN. | Right after creation the creator's role is ADMIN, shown as "Creator" on their profile. | Must | Built (mock) | `api.test` |
 | COM-03 | Public communities have community moderators. | When creating a public community the creator can add moderators by username; the creator is always a moderator too. The page shows "moderated by <names>". | Must | Built (mock) | `community.test` |
 | COM-04 | Unknown moderator usernames are handled. | Adding a username that doesn't exist either shows an error or is ignored with a visible notice — never silently creates a user. | Should | Partial — mock silently ignores unknown names | Manual |
 | COM-05 | Private communities don't have community moderators. | Choosing Private hides the moderator picker and explains that each market gets its own moderator. | Must | Built (mock) | `community.test` |
 | COM-06 | Private communities get an invite code. | A private community has a unique invite code from the moment it's created. | Must | Built (mock) | `api.test` |
-| COM-07 | The community page shows the community's details. | Shows avatar, name, Public/Private badge, member count, moderators and description. | Must | Built (mock) | `community.test` |
+| COM-07 | The community page shows the community's details. | Shows avatar, name, Public/Private badge, member count, moderators and description, plus a "Leaderboard" button for members (LDR-05). | Must | Built (mock) | `community.test`, `leaderboard.test` |
 | COM-08 | The community page lists its markets. | All markets in the community appear as cards, highest volume first. Shows "No markets yet — start one." when empty. | Must | Built (mock) | `community.test` |
 | COM-09 | Members can start a market from the community page. | Members see "+ New market", which opens the create form with this community pre-selected. Non-members don't see it. | Must | Built (mock) | `community.test` |
 | COM-10 | Non-members can join a public community from its page. | A non-member sees "Join community". Clicking it makes them a MEMBER, hides the button and shows "+ New market". | Must | Built (mock) | `community.test` |
@@ -196,14 +204,15 @@ The **Test** column names the automated test that covers the requirement (paths 
 | COM-17 | The creator can issue a new invite code. | Generating a new code makes the old link stop working. | Could | Not built — API only, no UI | — |
 | COM-18 | The creator can edit the name and description. | Changes appear everywhere after save. | Could | Not built — API only, no UI | — |
 | COM-19 | A user can't join the same community twice. | Joining again returns 409 `ALREADY_MEMBER`; the database has a unique (community, user) constraint. | Must | Built (mock) | `api.test` |
+| COM-20 | Users can see all their communities in one place. | `/communities` ("Groups" in the nav) lists every community the user belongs to with privacy, member count and a Creator/Moderator chip where it applies, plus "+ New community" and a link to Discover. Communities the user hasn't joined aren't listed. | Must | Built (mock) | `community.test` |
 
 ### 3.5 Discover (DSC)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
 | DSC-01 | Discover lists every public community. | `/discover` shows all public communities (joined or not) and no private ones, largest first. | Must | Built (mock) | `api.test`, `community.test` |
-| DSC-02 | Each Discover card shows what the community is. | Card shows avatar, name (links to the community), member count, description and moderators. | Must | Built (mock) | `community.test` |
-| DSC-03 | Users can join from Discover. | "Join" makes the user a member and the button changes to a disabled "Joined ✓". The community then appears in the Home sidebar. | Must | Built (mock) | `community.test` |
+| DSC-02 | Each Discover card shows what the community is. | Card shows avatar, name (links to the community), member count, number of live markets, description and moderators. | Must | Built (mock) | `community.test` |
+| DSC-03 | Users can join from Discover. | "Join" makes the user a member and the button changes to a disabled "Joined ✓". The community then appears in "Your communities" on Home and on Groups. | Must | Built (mock) | `community.test` |
 | DSC-04 | Already-joined communities are marked. | Communities the user already belongs to show "Joined ✓" instead of Join. | Must | Built (mock) | `community.test` |
 
 ### 3.6 Invite links (INV)
@@ -220,7 +229,7 @@ The **Test** column names the automated test that covers the requirement (paths 
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| MKT-01 | A member can create a market in a community they belong to. | "+ Create → New market" opens the form; the Community dropdown lists only the user's communities. On success the user lands on the new market page. | Must | Built (mock) | `account.test` |
+| MKT-01 | A member can create a market in a community they belong to. | "Create → New market", the phone tab bar's Create, or Home's "+ Create a market" opens the form; the Community dropdown lists only the user's communities. On success the user lands on the new market page. | Must | Built (mock) | `account.test` |
 | MKT-02 | A market needs a question. | The question is required, max 255 characters. | Must | Built (mock) | Manual |
 | MKT-03 | A market has a type: Yes/No or Multiple outcomes. | The Outcome type toggle defaults to Yes/No. | Must | Built (mock) | `account.test` |
 | MKT-04 | Yes/No markets get exactly two options, created by the server. | A binary market always has options "Yes" and "No"; any options sent by the client are ignored. | Must | Built (mock) | `api.test` |
@@ -230,9 +239,9 @@ The **Test** column names the automated test that covers the requirement (paths 
 | MKT-08 | Public-community markets are moderated by the community's moderators. | For a public community the form shows "Moderated by <names>" instead of a picker, and any moderator ID sent is ignored. | Must | Built (mock) | `account.test` |
 | MKT-09 | A new market starts open with even odds. | Status is OPEN, pool is 0, and every option shows an equal share (50/50 for Yes/No). | Must | Built (mock) | `api.test` |
 | MKT-10 | Only members can create markets in a community. | A non-member trying to create a market gets 403 `FORBIDDEN`. | Must | Built (mock) | Manual |
-| MKT-11 | The market page shows the market's details. | Shows the community pill (links back), time left or status, question, description, chart, outcomes, and a Market info panel: Volume, Closes (date and time), Moderator, Created by. | Must | Built (mock) | `market.test` |
+| MKT-11 | The market page shows the market's details. | Shows the community chip, a status pill (LIVE, Closed, Resolved or Nullified), question, description, time left · volume · "N predicting", the outcomes, the stake panel (BET-01), the probability chart, recent activity and a Market info panel: Volume, Closes (date and time), Moderator, Created by. | Must | Built (mock) | `market.test` |
 | MKT-12 | The market page explains how resolution works. | The info panel shows the resolution rule text from the design. | Should | Built (mock) | Manual |
-| MKT-13 | Market cards summarise a market. | Each card shows community pill (purple for private, green for public), time left, question, odds (Yes % and bar for binary; top 3 outcomes for multiple choice), volume, and either the user's stake or the result. Clicking it opens the market. | Must | Built (mock) | `card.test` |
+| MKT-13 | Market cards summarise a market. | Each card shows the community chip (purple with a lock for private, green with a globe for public), time left, question, type and status (e.g. "Yes / No · Live market"), each outcome's % and bar (Yes and No for binary; top 3 plus "+N more" for multiple choice), "N pts staked", either the user's stake or the result, and "View prediction →". Clicking it opens the market. | Must | Built (mock) | `card.test` |
 | MKT-14 | Markets can have a description. | The creator can add an optional description, shown under the question. | Should | Partial — supported by the API, not in the create form | — |
 | MKT-15 | Back navigation from a market returns to its community. | "← Back to <community>" links to the community page. | Should | Built (mock) | Manual |
 
@@ -242,26 +251,32 @@ The **Test** column names the automated test that covers the requirement (paths 
 |---|---|---|---|---|---|
 | ODD-01 | Each option's probability is its share of the pool. | probability = option total ÷ market pool. With an empty pool, options split evenly. Probabilities across a market add up to 100% (±1% for rounding). | Must | Built (mock) | `api.test` |
 | ODD-02 | Probabilities update right after every bet. | After a bet, the market page, chart legend and cards show the new percentages without a reload. | Must | Built (mock) | `api.test` |
-| ODD-03 | The market page shows probability over time. | A line chart shows each option's probability from market creation to now, one colour per option, with a legend showing current percentages. | Must | Built (mock) | `market.test` |
+| ODD-03 | The market page shows probability over time. | A "Probability history" line chart shows each option's probability from market creation to now, one colour per option (Yes green / No coral for binary; lime, purple, orange… for multiple choice), with the leading option's latest point marked and a legend showing current percentages. | Must | Built (mock) | `market.test` |
 | ODD-04 | The chart records a point at creation and after every bet. | A new market has one history point; each bet adds one. The last point matches the current probabilities. | Must | Built (mock) | `api.test` |
-| ODD-05 | Volume is the total pool. | "Volume" shows the pool, abbreviated above 1,000 (e.g. "3.2k pts"). | Must | Built (mock) | `format.test`, `card.test` |
+| ODD-05 | Volume is the total pool. | Cards show "N pts staked" and the info panel shows "Volume", abbreviated above 1,000 (e.g. "3.2k pts"). | Must | Built (mock) | `format.test`, `card.test` |
 | ODD-06 | Users see what they'd win. | The info panel shows the user's stake and "If it wins" payout at current odds. | Should | Built (mock) | Manual |
+| ODD-07 | The chart can be narrowed to recent activity. | 1H / 24H / ALL toggles (default ALL) limit the chart to that period, starting from the last value before it; the left axis label shows the period ("1h ago", "24h ago"). The API returns full history; filtering is done in the UI. | Could | Built (mock) | `market.test` |
+| ODD-08 | An open market page updates itself. | While a market page is open and the market is OPEN or LOCKED, it re-fetches the market (odds, chart, pool, participants, status) and its activity every 5 seconds, without a reload and without losing the selected outcome or the stake being typed. Polling pauses while the browser tab is hidden, refreshes as soon as it's visible again, and stops once the market is RESOLVED or CANCELLED. | Must | Built (mock) | `live.test` |
 
 ### 3.9 Placing bets (BET)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| BET-01 | Members can bet on an open market. | Pick an outcome (Yes/No buttons, or a row in a multi-outcome list), enter points, click "Place bet". A confirmation "Bet placed — N pts on <option>." appears. | Must | Built (mock) | `market.test` |
+| BET-01 | Members can bet on an open market. | Pick an outcome under "Choose your prediction" (the chosen card is outlined in lime with "✓ Your selected outcome"), enter points in "Stake your points", click "Stake N points", then "Confirm stake" (BET-14). "Staked N pts on <option>." appears. | Must | Built (mock) | `market.test` |
 | BET-02 | Placing a bet deducts points and grows the pool. | Balance drops by the amount, the option's total and the pool grow by the amount, all in one step. | Must | Built (mock) | `api.test` |
 | BET-03 | Bets are whole numbers of at least 1. | 0, negatives and decimals are rejected with `VALIDATION_ERROR`. | Must | Built (mock) | Manual |
 | BET-04 | Users can't bet more than their balance. | Betting more than the balance fails with `INSUFFICIENT_FUNDS` ("You only have N pts") and nothing changes. | Must | Built (mock) | `api.test` |
 | BET-05 | Users can add to their bet but not switch sides. | A second bet on the same option adds to the stake. A bet on a different option fails with `OPTION_SWITCH_NOT_ALLOWED` ("You already bet on "<option>""). | Must | Built (mock) | `api.test`, `market.test` |
 | BET-06 | The user's existing side is pre-selected. | Opening a market where the user already bet selects that option automatically. | Should | Built (mock) | Manual |
-| BET-07 | The Place bet button is only enabled when a bet is possible. | Disabled until an outcome is picked and an amount entered, and while a bet is being placed. | Must | Built (mock) | Manual |
-| BET-08 | No betting on closed markets. | On LOCKED, RESOLVED or CANCELLED markets the wager box is hidden and the API rejects bets with `MARKET_CLOSED`. | Must | Built (mock) | `api.test`, `market.test` |
+| BET-07 | The stake button is only enabled when a bet is possible. | It reads "Pick an outcome first" until an outcome is picked, "Enter your stake" until a whole number ≥ 1 is entered, then "Stake N points". It's disabled in the first two states, when the amount is over the balance (BET-13), and while "Staking…". | Must | Built (mock) | `market.test` |
+| BET-08 | No betting on closed markets. | On LOCKED, RESOLVED or CANCELLED markets the stake panel is hidden, outcomes can't be selected, and the API rejects bets with `MARKET_CLOSED`. | Must | Built (mock) | `api.test`, `market.test` |
 | BET-09 | Only members can bet. | Non-members of a community can't bet on its markets (403). | Must | Partial — enforced for private communities; public non-members can currently bet in the mock | Manual |
-| BET-10 | Errors explain what went wrong. | Every rejected bet shows the server's message under the wager box; the balance and stake are unchanged. | Must | Built (mock) | `market.test` |
-| BET-11 | The user's stake is shown on the market and on cards. | The info panel shows "Your stake: N pts on <option>". Cards show "You: N on <option>". | Must | Built (mock) | `card.test`, `market.test` |
+| BET-10 | Errors explain what went wrong. | Every rejected bet shows the server's message in the stake panel; the balance and stake are unchanged. | Must | Built (mock) | `market.test` |
+| BET-11 | The user's stake is shown on the market and on cards. | The info panel shows "Your stake: N pts on <option>", the backed outcome card shows "Your stake · N pts", and cards show "Your stake: N on <option>". | Must | Built (mock) | `card.test`, `market.test` |
+| BET-12 | Stakes are quick to build. | +25, +50 and +100 add to the current amount and MAX sets it to the whole balance; "Available balance" shows the balance under the buttons. | Should | Built (mock) | `market.test` |
+| BET-13 | Stakes over the balance are stopped before they're sent. | Entering more than the balance shows "That's more than your balance.", highlights the balance and disables the stake button. The API still enforces BET-04. | Should | Built (mock) | `market.test` |
+| BET-14 | Stakes are confirmed before they're placed. | "Stake N points" opens a confirmation: "Stake N pts on <option>?" with the estimated return if it wins at current odds (the RES-05 formula, including this stake). "Confirm stake" places it; "Back" cancels without sending anything. | Should | Built (mock) | `market.test` |
+| BET-15 | Only virtual points are wagered. | The stake panel states "Virtual points only · No real-money wagering". | Must | Built (mock) | Manual |
 
 ### 3.10 Market lifecycle (LCK)
 
@@ -284,68 +299,75 @@ The **Test** column names the automated test that covers the requirement (paths 
 | RES-06 | Rounding leftovers aren't lost. | Points left over from rounding down go to the largest winning bet, so total paid out equals the pool. | Should | Not built — mock drops the remainder | — |
 | RES-07 | If nobody backed the winning option, everyone is refunded. | Resolving to an option with no bets refunds every bet in full. | Must | Built (mock) | Manual |
 | RES-08 | Nullifying refunds every bet in full. | After nullifying, every bettor gets back exactly what they bet and the market shows "This market was nullified — all bets refunded." | Must | Built (mock) | `api.test`, `market.test` |
-| RES-09 | Settled markets show the outcome. | A resolved market shows a green banner "Resolved: <option> — payouts settled." Cards show "Resolved: <option>" or "Nullified · refunded". | Must | Built (mock) | `market.test`, `card.test` |
+| RES-09 | Settled markets show the outcome. | A resolved market shows a green banner "Resolved: <option> — payouts settled." and a ✓ next to the winning outcome. A nullified market shows "This market was nullified — all bets refunded." Cards show "Resolved: <option>" or "Nullified · refunded". | Must | Built (mock) | `market.test`, `card.test` |
 | RES-10 | A market can only be settled once. | Resolving or nullifying an already settled market is rejected; nobody is paid twice. | Must | Built (mock) | Manual |
 | RES-11 | Settlement is recorded. | Resolving stores the winning option, who resolved it, when, and optional notes. | Must | Backend only | Manual |
 | RES-12 | Bet results are recorded per position. | Each position ends as WON, LOST or REFUNDED with its payout, visible in the user's bet history. | Must | Built (mock) | `api.test`, `account.test` |
+| RES-14 | Users see their own result on a resolved market. | If the user backed the winner, a lime "You literally called it." card shows the question, their prediction, "+N points" (payout minus stake) and a WINNER tag. If they backed another option, a "Not this time." card shows what they staked. RES-13 is reserved for the open question in §5. | Should | Built (mock) | `market.test` |
+| RES-15 | A settlement made elsewhere shows up live. | If a market is resolved or nullified while someone has its page open (e.g. by the moderator on another device), within about 5 seconds the page shows the outcome banner, hides the moderator panel and stake panel, and refreshes the viewer's balance, bet history, feeds and the community leaderboard. | Should | Built (mock) | `live.test` |
 
 ### 3.12 Mod Queue (MOD)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| MOD-01 | Moderators have one place to see their markets. | `/mod-queue` lists "Needs resolution" (ended markets they moderate) and "Active — you moderate" (open ones). | Must | Built (mock) | `api.test`, `account.test` |
-| MOD-02 | Moderators can resolve straight from the queue. | Each pending market shows one button per option and "Nullify"; acting removes it from the list. | Must | Built (mock) | `account.test` |
-| MOD-03 | The nav shows how many markets need a decision. | The Mod Queue tab shows a red badge with the pending count, hidden when zero. It updates after resolving. | Must | Built (mock) | `nav.test` |
-| MOD-04 | Empty states are friendly. | No pending markets shows "Nothing waiting on you — nice."; no active ones shows "No open markets to watch." | Should | Built (mock) | `account.test` |
+| MOD-01 | Moderators have one place to see their markets. | `/mod-queue` ("Your markets. Your call.") has two tabs: "Needs resolution" (ended markets they moderate) and "Active markets" (open ones), each showing its count. | Must | Built (mock) | `api.test`, `account.test` |
+| MOD-02 | Moderators can resolve straight from the queue. | Each pending market shows its community, points at stake, one "Pick the winning outcome" button per option and "Nullify"; acting removes it from the list. | Must | Built (mock) | `account.test` |
+| MOD-03 | The nav shows how many markets need a decision. | The Mod queue tab (and the shield icon on phones, labelled "Moderator queue, N pending") shows a red badge with the pending count, hidden when zero. It updates after resolving. | Must | Built (mock) | `nav.test` |
+| MOD-04 | Empty states are friendly. | No pending markets shows "All caught up.", "No predictions need your decision right now. Enjoy the peace while it lasts." and "Back to your communities →" (to Groups). No active ones shows "Nothing live." | Should | Built (mock) | `account.test` |
 
 ### 3.13 Home feed and search (FEED)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| FEED-01 | Home greets the user. | Heading "Hey <username> — here's what's heating up." | Should | Built (mock) | `home.test` |
-| FEED-02 | Home lists the user's communities. | The sidebar lists every community the user belongs to, with Public/Private, each linking to it, plus "Discover more →". | Must | Built (mock) | `home.test` |
-| FEED-03 | Home shows trending markets from the user's private communities. | Up to 3 OPEN markets from private communities the user belongs to, highest volume first. | Must | Built (mock) | `api.test`, `home.test` |
-| FEED-04 | Home shows trending markets from public communities. | Up to 3 OPEN markets from any public community (joined or not), highest volume first. | Must | Built (mock) | `api.test`, `home.test` |
+| FEED-01 | Home greets the user. | A lime line "Good morning / afternoon / evening, <username> 👋" (by local time), the heading "What's the word?" and "Your friends are making some bold predictions." | Should | Built (mock) | `home.test` |
+| FEED-02 | Home lists the user's communities. | "Your communities" lists every community the user belongs to with privacy and member count, each linking to it, plus "Explore →" (Discover) and "+ New community". On phones it sits below the market feed. | Must | Built (mock) | `home.test` |
+| FEED-03 | Home shows trending markets from the user's private communities. | "Your friends are betting" shows up to 3 OPEN markets from private communities the user belongs to, highest volume first. | Must | Built (mock) | `api.test`, `home.test` |
+| FEED-04 | Home shows trending markets from public communities. | "Trending in public communities" shows up to 3 OPEN markets from any public community (joined or not), highest volume first, with "See all →" to Discover. | Must | Built (mock) | `api.test`, `home.test` |
 | FEED-05 | Search filters the trending markets. | Typing in "Search markets or communities" shows only markets whose question or community name contains the text (case-insensitive). A section with no matches says "No markets match your search." | Should | Built (mock) | `home.test` |
 | FEED-06 | Search covers all markets, not only the ones shown. | Searching finds any market the user can see, not just the top 3 per section. | Could | Not built — filters the loaded top 3 only | — |
+| FEED-07 | Home prompts users to create a market. | A lime "Friend group forecast" card ("Someone's getting exposed today.") has "+ Create a market", linking to the create form. | Should | Built (mock) | `home.test` |
 
 ### 3.14 Market activity (ACT)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| ACT-01 | The market page shows recent bets. | "Recent activity" lists the latest bets as "<user> bet N pts on <option>" with how long ago, newest first (up to 8). | Must | Built (mock) | `market.test` |
+| ACT-01 | The market page shows recent bets. | "Recent activity" lists the latest bets with the bettor's avatar as "<user> bet N pts on <option>" with how long ago, newest first (up to 8). | Must | Built (mock) | `market.test` |
 | ACT-02 | New bets appear in activity right away. | After placing a bet, it appears at the top of Recent activity without a reload. | Should | Built (mock) | `market.test` |
+| ACT-03 | Other members' bets appear without a reload. | A bet placed by someone else shows up in Recent activity, and in the odds and chart, within about 5 seconds (one poll, ODD-08). | Must | Built (mock) | `live.test` |
 
 ### 3.15 Leaderboards and prediction stats (LDR)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| LDR-01 | Each community has a leaderboard. | Members are ranked by net profit (winnings minus stakes) within that community, showing correct/total predictions and accuracy. | Should | Not built — API defined, no UI, mock returns placeholders | — |
-| LDR-02 | Prediction stats update when markets settle. | After a market resolves, each participant's total and correct predictions update. Refunded bets don't count. | Should | Backend only | Manual |
+| LDR-01 | Each community has a leaderboard ranked by win rate. | `/communities/:id/leaderboard` ranks members by win rate (correct ÷ settled predictions in that community). Ties go to more correct calls, then more net profit; identical records share a rank (1, 2, 2, 4). Members with no settled predictions aren't ranked. The UI re-ranks whatever order the API returns. | Should | Built (mock) | `ranking.test`, `leaderboard.test` |
+| LDR-02 | Prediction stats update when markets settle. | After a market resolves, each participant's total and correct predictions update, globally and on the community leaderboard. Each market counts once per user; refunded bets don't count. | Should | Partial — leaderboard stats computed in the mock; global stats are backend only | `leaderboard.test` |
 | LDR-03 | The prediction score formula is defined. | `users.prediction_score = round(100 × correct_predictions / total_predictions)`, ties rounded up; 0 with no settled predictions. Count each resolved market once; exclude all refunds. | Should | Implemented locally — migration and database verification pending | `backend/tests/schema.sql`; `backend/internal/router/lifecycle_test.go` |
+| LDR-04 | The leaderboard shows who's winning at a glance. | #1 gets a lime "Top caller" card with their win rate, "Called N of M" and net points. Everyone else is listed with rank, avatar, "N/M called", net points (green if up, red if down), win rate and a bar. The user's own row is outlined and marked "You", and the header says "You're #R of N with a P% win rate." Members with no settled predictions are listed under "Yet to call one". With no settled predictions at all it says so. | Should | Built (mock) | `leaderboard.test` |
+| LDR-05 | Members can reach the leaderboard. | The community page shows "Leaderboard" to members; non-members don't see it (the endpoint is members-only). | Should | Built (mock) | `leaderboard.test` |
 
 ### 3.16 Navigation and layout (NAV)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| NAV-01 | A sticky top bar is on every app page. | Shows the Huddle logo (links Home), tabs Home / Discover / Mod Queue, balance, "+ Create" and avatar. It stays visible while scrolling. | Must | Built (mock) | `nav.test` |
-| NAV-02 | The current tab is highlighted. | The tab for the current section is filled dark; the others aren't. | Should | Built (mock) | `nav.test` |
-| NAV-03 | "+ Create" offers both create actions. | Opens a menu with "New community" and "New market"; clicking outside closes it. | Must | Built (mock) | `nav.test` |
-| NAV-04 | Pages work on phones. | At 375px wide every page is usable with no sideways scrolling; the Home sidebar stacks above the feed and the market page stacks its info panel below. | Must | Built (mock) | Manual |
+| NAV-01 | A sticky top bar is on every app page. | Shows the "called it." logo (links Home), the balance pill and the avatar. From 768px wide it also shows the tabs Home / Discover / Groups / Mod queue and "Create"; on phones a shield icon links to the Mod queue instead. It stays visible while scrolling. | Must | Built (mock) | `nav.test` |
+| NAV-02 | The current tab is highlighted. | The tab for the current section has a raised background (lime in the phone tab bar) and `aria-current="page"`; the others don't. Community pages count as Groups. | Should | Built (mock) | `nav.test` |
+| NAV-03 | "Create" offers both create actions. | Opens a menu with "New market" and "New community"; clicking outside closes it. | Must | Built (mock) | `nav.test` |
+| NAV-04 | Pages work on phones. | At 375px wide every page is usable with no sideways scrolling. Home stacks the hero, feed, then "Your communities"; the market page stacks header, outcomes, stake panel, market info, chart, then activity. | Must | Built (mock) | Manual |
 | NAV-05 | Unknown pages show a not-found screen. | Visiting an unknown URL, or a market/community ID that doesn't exist, shows a clear "not found" message. | Should | Partial — missing IDs show the API error text | Manual |
-| NAV-06 | The browser tab is titled "Huddle". | Page title is "Huddle". | Could | Built (mock) | Manual |
+| NAV-06 | The browser tab is titled "called it." | Page title is "called it." | Could | Built (mock) | Manual |
+| NAV-07 | Phones get a bottom tab bar. | Below 768px wide a fixed bar shows Home, Discover, Create (new market), Groups and Profile, with icons and labels; page content isn't hidden behind it. | Must | Built (mock) | `nav.test` |
 
 ### 3.17 Loading, empty and error states; formatting (UX)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| UX-01 | Pages show placeholders while loading. | Lists and detail pages show grey skeleton blocks until data arrives; no layout jump or blank page. | Should | Built (mock) | Manual |
+| UX-01 | Pages show placeholders while loading. | Lists and detail pages show skeleton blocks until data arrives; no layout jump or blank page. | Should | Built (mock) | Manual |
 | UX-02 | Every list has an empty state. | Each list shows a short message when there's nothing to show instead of an empty area. | Should | Built (mock) | `home.test`, `account.test` |
 | UX-03 | Server errors are shown in plain language. | Failed actions show the API's message in a red note next to the action. Form field errors appear under the relevant field. | Must | Built (mock) | `market.test`, `account.test` |
-| UX-04 | Buttons show progress and prevent double submits. | While an action is in flight its button is disabled and reads "Placing…", "Creating…", "Joining…", etc. | Must | Built (mock) | Manual |
+| UX-04 | Buttons show progress and prevent double submits. | While an action is in flight its button is disabled and reads "Staking…", "Creating…", "Joining…", etc. | Must | Built (mock) | Manual |
 | UX-05 | Numbers are formatted consistently. | Balances and amounts use thousands separators; volume abbreviates thousands ("3.2k pts"); probabilities are whole percents. | Should | Built (mock) | `format.test` |
 | UX-06 | Relative times are readable. | Activity shows "40m ago", "5h ago", "2d ago". | Should | Built (mock) | `format.test` |
-| UX-07 | The app matches the Huddle design. | Colours, Nunito font, spacing and components match the Claude Design file (`Huddle.dc.html`) on every screen it covers. | Should | Built (mock) | Manual |
+| UX-07 | The app matches the "called it." design. | Dark theme only, Inter font, and the design palette: lime #D5FF5F (main buttons, selected states, brand), background #171B19, card #252B27, raised #303832, border #3A443C, text #F7F8F2 / muted #B4BDB4, Yes #A6E5C0, No #FF908B, community purple #B7A2FF. Lime is reserved for actions and selection. Screens match the design mockups for Home, prediction detail, Mod queue and the winning card. | Should | Built (mock) | Manual |
 
 ### 3.18 Accessibility (A11Y)
 
@@ -354,9 +376,9 @@ The **Test** column names the automated test that covers the requirement (paths 
 | A11Y-01 | Everything can be done with a keyboard. | Every link, button, toggle, form and dialog is reachable with Tab and usable with Enter/Space; focus is always visible. | Must | Partial — not audited | Manual |
 | A11Y-02 | Form fields have labels. | Every input has a visible label or an accessible name. | Must | Built (mock) | `market.test`, `account.test` |
 | A11Y-03 | Dialogs behave like dialogs. | The invite dialog is announced as a dialog, closes on Escape, and returns focus to "Invite people" when closed. | Should | Partial — focus isn't returned yet | `community.test` |
-| A11Y-04 | Selected outcomes are announced. | Outcome buttons expose their selected state (`aria-pressed`). | Should | Built (mock) | `market.test` |
+| A11Y-04 | Selected states are announced. | Outcome cards, Mod queue tabs, form toggles and chart range buttons expose their selected state (`aria-pressed`); nav links mark the current page (`aria-current`). | Should | Built (mock) | `market.test`, `nav.test` |
 | A11Y-05 | Colour isn't the only signal. | Yes/No, win/loss and public/private always have a text label as well as a colour. | Should | Built (mock) | Manual |
-| A11Y-06 | Text meets contrast guidelines. | Body text and controls meet WCAG AA contrast (4.5:1; 3:1 for large text). | Should | Partial — the design's faint grey (#A39C90) on cream is below 4.5:1 | Manual |
+| A11Y-06 | Text meets contrast guidelines. | Body text and controls meet WCAG AA contrast (4.5:1; 3:1 for large text). | Should | Partial — the faint label grey #7F8A81 passes on the page background (4.9:1) but not on cards (4.0:1) or raised surfaces (3.4:1); all other text passes | Manual |
 | A11Y-07 | The chart has a text alternative. | The probability chart has an accessible name, and current percentages are shown as text in the legend. | Should | Built (mock) | `market.test` |
 
 ---
@@ -377,6 +399,7 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | API-06 | Lists are paginated. | List endpoints accept `cursor` and `limit` and return `nextCursor` (null at the end). | Should | Partial — mock honours `limit` only | — |
 | API-07 | Placing a bet returns everything the UI needs. | The response includes the position, the updated market and the new balance, so no second request is needed. | Must | Built (mock) | `api.test` |
 | API-08 | The frontend reaches the API through `/api/v1`. | In real-backend mode the browser calls `/api/v1/*` on the Next.js site, which proxies to `API_URL`. | Must | Built | Manual |
+| API-09 | Polled endpoints are safe to call every few seconds. | `GET /markets/:id` and `GET /markets/:id/activity` send `Cache-Control: no-store` (so no proxy or browser serves stale odds) and aren't rate-limited below one request per 5 seconds per viewer. | Must | Backend only | Manual |
 
 ### 4.2 Security and authorization (SEC)
 
@@ -410,6 +433,7 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | PERF-01 | Pages are quick on a normal connection. | Home, market and community pages show content within 2 seconds on broadband with a local backend. | Should | Built (mock) | Manual |
 | PERF-02 | API calls are fast. | 95% of API requests finish in under 300 ms with MVP-sized data (hundreds of users, thousands of bets). | Should | Backend only | Manual |
 | PERF-03 | Data isn't refetched needlessly. | Navigating back to a page within 30 seconds reuses cached data; mutations refresh only affected data. | Could | Built (mock) | Manual |
+| PERF-04 | Polling doesn't overload the backend. | With 100 people viewing live markets (2 requests per viewer every 5 seconds, about 40 requests/second), `GET /markets/:id` and `GET /markets/:id/activity` still meet PERF-02. | Should | Backend only | Manual |
 
 ### 4.5 Developer tooling (DEV)
 
@@ -417,9 +441,9 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 |---|---|---|---|---|---|
 | DEV-01 | The frontend runs without the backend. | With `NEXT_PUBLIC_API_MOCK` unset or `true`, every screen works against the in-memory mock seeded with the design's sample data. | Must | Built | All tests |
 | DEV-02 | Switching to the real backend needs no code changes. | Building and running with `NEXT_PUBLIC_API_MOCK=false`, `API_URL` and the backend's `public.pem` (`JWT_PUBLIC_KEY_PATH` or `JWT_PUBLIC_KEY`) makes the app use the Go API with the route guard on. | Must | Built (checked against a production build with a test key; not yet against the real backend) | Manual |
-| DEV-03 | Automated tests run with one command. | `npm test` in `frontend/` runs the whole suite in under a minute with no backend or browser. | Must | Built | — |
+| DEV-03 | Automated tests run with one command. | `npm test` at the repository root runs the whole suite in under a minute with no backend or browser. | Must | Built | — |
 | DEV-04 | Tests are isolated. | Each test starts from the seeded data; test order doesn't change results. | Must | Built | All tests |
-| DEV-05 | Typecheck, lint and build pass. | `npx tsc --noEmit`, `npm run lint` and `npm run build` succeed on `dev`. | Must | Built | — |
+| DEV-05 | Typecheck, lint and build pass. | `npx tsc --noEmit`, `npm run lint` and `npm run build` succeed on `frontend-dev`. | Must | Built | — |
 
 ---
 
@@ -437,6 +461,7 @@ What each actor may do. ✓ = allowed, ✗ = must be refused by the API (403) an
 | Create a market in the community | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Bet on an OPEN market | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Resolve or nullify a LOCKED market | ✗ | ✗ | ✗ | ✗ (unless they're its moderator) | ✓ |
+| View the community leaderboard | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Deposit points into own wallet | ✗ | ✓ | ✓ | ✓ | ✓ |
 
 **Open question:** should a market's moderator be allowed to bet on that market? The design allows it (Jordan moderates "Trivia champion crowned tonight" and appears as an outcome). Allowing it is a conflict of interest. Decide and add a requirement (proposed **RES-13**).
@@ -448,10 +473,10 @@ What each actor may do. ✓ = allowed, ✗ = must be refused by the API (403) an
 Run these by hand against the full stack (frontend + Go backend) before declaring the MVP viable. Each lists the requirements it exercises.
 
 **E2E-1 — New user to first bet** (AUTH-01, AUTH-05, DSC-03, BET-01, WAL-02)
-1. Register a new account → Home shows "Hey <name>", balance 1,000 pts.
+1. Register a new account → Home shows "Good …, <name> 👋" and the balance pill shows 1,000.
 2. Discover → Join "NYC Weather Watchers" → button shows "Joined ✓".
-3. Open "Will it snow in NYC before Nov 1?" → pick Yes → bet 100.
-4. See "Bet placed — 100 pts on Yes.", balance 900 pts, Yes percentage up, your bet at the top of Recent activity.
+3. Open "Will it snow in NYC before Nov 1?" → pick Yes → enter 100 → "Stake 100 points" → "Confirm stake".
+4. See "Staked 100 pts on Yes.", balance 900, Yes percentage up, your bet at the top of Recent activity.
 
 **E2E-2 — Private community with friends** (COM-01, COM-06, COM-12, INV-01, INV-02, MKT-07)
 1. User A creates a private community "Test Crew".
@@ -460,11 +485,11 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 4. A creates a Yes/No market in Test Crew closing in 10 minutes, choosing B as moderator.
 5. B sees the market; a signed-in user C who isn't a member gets "This community is invite-only".
 
-**E2E-3 — Resolve and pay out** (LCK-02, RES-02, RES-03, RES-05, MOD-03, USR-04)
+**E2E-3 — Resolve and pay out** (LCK-02, RES-02, RES-03, RES-05, RES-14, MOD-03, USR-04)
 1. Continuing E2E-2: A bets 100 on Yes, B's friend D bets 300 on No.
 2. Wait for the deadline → market shows "Ended"; betting is gone.
 3. B's nav shows a Mod Queue badge of 1. B opens the market → "Validate: Yes" → confirm.
-4. Banner shows "Resolved: Yes — payouts settled." A's balance rises by 400 (the whole pool). D's history shows "Lost 300 pts". B's badge disappears.
+4. Banner shows "Resolved: Yes — payouts settled." A's balance rises by 400 (the whole pool) and A sees "You literally called it." with +300 points; D sees "Not this time." D's history shows "Lost 300 pts". B's badge disappears.
 
 **E2E-4 — Nullify** (RES-08, USR-04)
 1. Create a market, have two users bet, let it close.
@@ -472,26 +497,38 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 3. Both users' balances return to what they were before betting; both histories show "Refunded".
 
 **E2E-5 — Guard rails** (BET-04, BET-05, BET-08, MKT-06, WAL-04, RES-01)
-1. Try to bet more than your balance → "You only have N pts".
+1. Type a stake above your balance → "That's more than your balance." and the button is disabled. Send one anyway through the API → "You only have N pts".
 2. Bet on Yes, then try No on the same market → "You already bet on "Yes"".
 3. Try to create a market closing yesterday → field error, nothing created.
 4. Try to deposit 0 and 2,000,000 → Add stays disabled.
 5. As a non-moderator, call the resolve endpoint directly → 403.
 
 **E2E-6 — Top up** (WAL-03, WAL-08)
-1. Click the balance → +1,000 → balance up 1,000 and "Added 1,000 pts."
+1. Click the balance pill → +1,000 → balance up 1,000 and "Added 1,000 pts."
 2. Check the database: one `DEPOSIT` transaction of +1,000 with the right `balance_after`.
 
 **E2E-7 — Concurrency** (DATA-02, DATA-03)
 1. With 100 pts, fire two 100-pt bets at the same instant (e.g. two `curl` calls) → exactly one succeeds.
 2. Fire two resolve requests at once → one settlement, winners paid once.
 
-**E2E-8 — Token lifecycle** (AUTH-07, AUTH-13, AUTH-17, AUTH-18, AUTH-19, AUTH-08)
+**E2E-8 — Token lifecycle** (AUTH-07, AUTH-13, AUTH-17, AUTH-18, AUTH-19, AUTH-08, AUTH-24)
 1. Log in → browser devtools show `access_token` and `refresh_token` cookies, both HttpOnly with Path=/. Decode `access_token` (e.g. jwt.io): header `alg: EdDSA`, payload has `user_id` and `exp`.
 2. Wait for the access token to expire (or delete only the `access_token` cookie) → reload a page → it loads normally and both cookies have new values.
 3. Stay on a page past expiry and place a bet → it succeeds without a login prompt (one `/auth/refresh` call in the network tab).
-4. Delete both cookies → reload → redirected to `/login?next=…`; log in → back on the same page.
+4. Delete both cookies → reload → redirected to `/login?next=…`; log in → a full page load lands back on the same page (not the login form).
 5. Log out → a refresh token copied before logging out is rejected by `/auth/refresh` (401).
+
+**E2E-9 — Leaderboard** (LDR-01, LDR-02, LDR-04, LDR-05)
+1. Continuing E2E-3: open Test Crew → "Leaderboard".
+2. A is the "Top caller" at 100% (called 1 of 1, +300 pts); D is #2 at 0% (0/1, −300 pts); members who didn't bet are under "Yet to call one".
+3. Nullify another Test Crew market that A bet on → A's record is unchanged (refunds don't count).
+
+**E2E-10 — Live market** (ODD-08, ACT-03, RES-15)
+1. Open the same OPEN market as user A (browser 1) and user B (browser 2).
+2. B stakes 100 → within ~5 s A's odds, chart and Recent activity update without a reload, and A's half-typed stake is kept.
+3. Switch A's browser to another tab for a minute → the network tab shows no market requests while hidden; switching back refreshes at once.
+4. Let the market close; the moderator resolves it from a third browser → within ~5 s A sees the outcome banner, and A's balance updates if A won.
+5. After it's resolved, the network tab shows no more polling.
 
 ---
 
@@ -507,15 +544,19 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 4 | Public-community non-members can bet in the mock. | BET-09 | Decide: must users join before betting? Recommended: yes. Enforce in backend and mock. |
 | 5 | Can a moderator bet on their own market? | §5 | Decide and add RES-13. |
 | 6 | Unknown moderator usernames are silently dropped. | COM-04 | Return a field error listing unknown names. |
-| 7 | No UI for leaderboards, members, leaving, roles, invite reset, editing, transactions, other profiles. | LDR-01, COM-15–18, WAL-09, USR-07–08 | Not in the Claude Design file. Decide which are MVP. |
+| 7 | No UI for members, leaving, roles, invite reset, editing, transactions, other profiles. | COM-15–18, WAL-09, USR-07–08 | Not in the design mockups. Decide which are MVP. |
 | 8 | Market description can't be entered. | MKT-14 | Add a description field to the create form. |
 | 9 | Search only filters the three trending markets per section. | FEED-06 | Add a `q` parameter to `GET /markets` for server-side search. |
 | 10 | Prediction score formula agreed with Owen. | LDR-03 | Rounded accuracy × 100, excluding refunds; apply migration 000008 and run database integration tests. |
-| 11 | Design's faint grey text fails contrast. | A11Y-06 | Darken `--color-faint` slightly, or confirm the design choice. |
+| 11 | The faint label grey (#7F8A81) fails contrast on card and raised surfaces. | A11Y-06 | Lighten `--color-faint` to about #96A197 (passes on all three surfaces), or use the muted grey on cards. |
 | 12 | Deposits have no off switch or rate limit. | WAL-10, SEC-08 | Put the endpoint behind a config flag. |
 | 13 | Schema additions from the contract (visibility, price history, `DEPOSIT` type) need to be in the backend migrations. | COM-*, ODD-03, WAL-03 | Backend to confirm against `api-contract.md` §1 rows 12–15. |
 | 14 | Auth cookies must use `Path=/`. If the backend scopes `refresh_token` to `/api/v1/auth`, the page guard can't see it and users are sent to login instead of refreshed. | AUTH-07, AUTH-17 | Backend to set `Path=/` on both cookies (see api-contract.md → Authentication). |
 | 15 | Access and refresh token lifetimes aren't agreed. | AUTH-13, AUTH-19 | Suggested: 15 minutes and 7–30 days. |
+| 16 | Auth cookies must not set `Domain`. The browser receives them from the Next.js origin through the `/api/v1` rewrite, so a `Domain` naming the backend host (e.g. an ngrok URL) is rejected and login appears to do nothing. | AUTH-07, AUTH-24 | Backend to omit `Domain` (see api-contract.md → Authentication). |
+| 17 | Should the leaderboard need a minimum number of settled predictions? Today someone 1-for-1 (100%) ranks above someone 9-for-10 (90%). | LDR-01 | Decide a minimum (e.g. 3) or accept it for the MVP. |
+| 18 | Should the stake confirmation step be skippable for small stakes? | BET-14 | Decide after user testing. |
+| 19 | Live updates use polling (every 5 s), so they lag by up to 5 s and cost 2 requests per viewer per 5 s even when nothing changes. Only the market page is live; Home, community and Mod queue pages update on navigation or window focus. | ODD-08, API-09, PERF-04 | Fine for the MVP. Post-MVP, push changes over Server-Sent Events or WebSockets, or support conditional requests (`ETag` / `If-None-Match` → `304`) to make idle polls cheap. |
 
 ---
 
@@ -523,29 +564,29 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 
 | Area | Requirements | Built | Partial | Not built | Backend only | Has automated test |
 |---|---|---|---|---|---|---|
-| AUTH | 23 | 14 | 4 | 0 | 5 | 12 |
+| AUTH | 24 | 15 | 4 | 0 | 5 | 14 |
 | USR | 8 | 6 | 0 | 2 | 0 | 4 |
 | WAL | 10 | 6 | 0 | 2 | 2 | 5 |
-| COM | 19 | 14 | 1 | 4 | 0 | 13 |
+| COM | 20 | 15 | 1 | 4 | 0 | 14 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
 | INV | 5 | 4 | 0 | 0 | 1 | 4 |
 | MKT | 15 | 14 | 1 | 0 | 0 | 10 |
-| ODD | 6 | 6 | 0 | 0 | 0 | 5 |
-| BET | 11 | 10 | 1 | 0 | 0 | 7 |
+| ODD | 8 | 8 | 0 | 0 | 0 | 7 |
+| BET | 15 | 14 | 1 | 0 | 0 | 11 |
 | LCK | 4 | 4 | 0 | 0 | 0 | 2 |
-| RES | 12 | 10 | 0 | 1 | 1 | 8 |
+| RES | 14 | 12 | 0 | 1 | 1 | 10 |
 | MOD | 4 | 4 | 0 | 0 | 0 | 4 |
-| FEED | 6 | 5 | 0 | 1 | 0 | 5 |
-| ACT | 2 | 2 | 0 | 0 | 0 | 2 |
-| LDR | 3 | 0 | 0 | 2 | 1 | 0 |
-| NAV | 6 | 5 | 1 | 0 | 0 | 3 |
+| FEED | 7 | 6 | 0 | 1 | 0 | 6 |
+| ACT | 3 | 3 | 0 | 0 | 0 | 3 |
+| LDR | 5 | 3 | 1 | 1 | 0 | 4 |
+| NAV | 7 | 6 | 1 | 0 | 0 | 4 |
 | UX | 7 | 7 | 0 | 0 | 0 | 4 |
 | A11Y | 7 | 4 | 3 | 0 | 0 | 4 |
-| API | 8 | 7 | 1 | 0 | 0 | 5 |
+| API | 9 | 7 | 1 | 0 | 1 | 5 |
 | SEC | 9 | 5 | 0 | 2 | 2 | 2 |
 | DATA | 6 | 0 | 1 | 0 | 5 | 0 |
-| PERF | 3 | 2 | 0 | 0 | 1 | 0 |
+| PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **183** | **138** | **13** | **14** | **18** | **105** |
+| **Total** | **200** | **154** | **14** | **13** | **19** | **123** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. Update the Status and Test columns in the same PR that changes the behaviour.
