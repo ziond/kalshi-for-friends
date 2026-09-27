@@ -83,3 +83,8 @@ for up_file in "${up_files[@]}"; do
 done
 "${psql_cmd[@]}" -f "$backend_dir/tests/schema.sql"
 printf '%s\n' 'PASS: migrations apply, constraints hold, rollback is clean, and reapplication succeeds.'
+
+if [[ "${RUN_API_TESTS:-0}" == "1" ]]; then
+    # Only this newly-created isolated cluster is used, never the app database.
+    (cd "$backend_dir" && TEST_DATABASE_URL="postgres://migration_test@/postgres?host=$cluster_dir/socket&sslmode=disable" go test -count=1 -p 1 ./...)
+fi

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,16 +16,23 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	pool, err := database.New(ctx, cfg.DatabaseURL)
 	cancel()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer pool.Close()
 
@@ -39,7 +47,5 @@ func main() {
 		}
 	}()
 
-	if err := app.Listen(":" + cfg.Port); err != nil {
-		log.Fatal(err)
-	}
+	return app.Listen(net.JoinHostPort(cfg.HTTPHost, cfg.Port))
 }

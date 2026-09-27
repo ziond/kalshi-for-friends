@@ -49,13 +49,15 @@ func setup(t *testing.T) (*fiber.App, *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{
-		Env:            "test",
-		JWTPrivateKey:  priv,
-		JWTPublicKey:   pub,
-		SessionTTL:     time.Hour,
-		CookieName:     "oracle_session",
-		CookieSameSite: "Lax",
-		InitialBalance: 1000,
+		Env:             "test",
+		JWTPrivateKey:   priv,
+		JWTPublicKey:    pub,
+		SessionTTL:      time.Hour,
+		RefreshTTL:      7 * 24 * time.Hour,
+		CookieName:      "access_token",
+		CookieSameSite:  "Lax",
+		InitialBalance:  1000,
+		DepositsEnabled: true,
 	}
 	return router.New(cfg, pool), pool
 }
@@ -79,7 +81,7 @@ func call(t *testing.T, app *fiber.App, method, path, cookie string, body any) r
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if cookie != "" {
-		req.Header.Set("Cookie", "oracle_session="+cookie)
+		req.Header.Set("Cookie", "access_token="+cookie)
 	}
 	res, err := app.Test(req, -1)
 	if err != nil {
@@ -97,7 +99,7 @@ func call(t *testing.T, app *fiber.App, method, path, cookie string, body any) r
 		}
 	}
 	for _, c := range res.Cookies() {
-		if c.Name == "oracle_session" {
+		if c.Name == "access_token" {
 			out.cookie = c.Value
 		}
 	}
@@ -261,7 +263,7 @@ func TestCommunityLifecycle(t *testing.T) {
 
 	expect(t, call(t, app, http.MethodPost, "/communities", owen, map[string]string{"name": "  "}), http.StatusBadRequest, "VALIDATION_ERROR")
 
-	created := call(t, app, http.MethodPost, "/communities", owen, map[string]string{"name": " Hackathon Team ", "description": "UNB"})
+	created := call(t, app, http.MethodPost, "/communities", owen, map[string]string{"name": " Hackathon Team ", "description": "UNB", "visibility": "PRIVATE"})
 	expect(t, created, http.StatusCreated, "")
 	b := created.body
 	if b["name"] != "Hackathon Team" || b["myRole"] != "ADMIN" || b["memberCount"] != float64(1) || b["openMarketCount"] != float64(0) {
@@ -274,7 +276,7 @@ func TestCommunityLifecycle(t *testing.T) {
 	id := "/communities/1"
 
 	// Non-members cannot see the community.
-	expect(t, call(t, app, http.MethodGet, id, zion, nil), http.StatusNotFound, "NOT_FOUND")
+	expect(t, call(t, app, http.MethodGet, id, zion, nil), http.StatusForbidden, "FORBIDDEN")
 
 	expect(t, call(t, app, http.MethodPost, "/communities/join", zion, map[string]string{"inviteCode": "NOPE"}), http.StatusNotFound, "INVALID_INVITE_CODE")
 	joined := call(t, app, http.MethodPost, "/communities/join", zion, map[string]string{"inviteCode": " " + strings.ToLower(code) + " "})
@@ -333,13 +335,13 @@ func TestCommunityLifecycle(t *testing.T) {
 
 	// The last admin can neither be demoted nor leave.
 	owenPath := id + "/members/1"
-	expect(t, call(t, app, http.MethodPatch, owenPath, owen, map[string]string{"role": "MEMBER"}), http.StatusConflict, "LAST_ADMIN")
-	expect(t, call(t, app, http.MethodDelete, owenPath, owen, nil), http.StatusConflict, "LAST_ADMIN")
+	expect(t, call(t, app, http.MethodPatch, owenPath, owen, map[string]string{"role": "MEMBER"}), http.StatusForbidden, "FORBIDDEN")
+	expect(t, call(t, app, http.MethodDelete, owenPath, owen, nil), http.StatusForbidden, "FORBIDDEN")
 
 	// With a second admin, the original admin may leave.
 	expect(t, call(t, app, http.MethodPatch, zionPath, owen, map[string]string{"role": "ADMIN"}), http.StatusOK, "")
 	expect(t, call(t, app, http.MethodDelete, owenPath, owen, nil), http.StatusNoContent, "")
-	expect(t, call(t, app, http.MethodGet, id, owen, nil), http.StatusNotFound, "NOT_FOUND")
+	expect(t, call(t, app, http.MethodGet, id, owen, nil), http.StatusForbidden, "FORBIDDEN")
 
 	// Members may leave themselves but not remove others.
 	sarahPath := id + "/members/" + itoa(sarahID)

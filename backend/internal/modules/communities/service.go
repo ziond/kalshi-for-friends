@@ -31,7 +31,7 @@ var (
 	errNotFound       = apperror.NotFound("Community not found")
 	errMemberNotFound = apperror.NotFound("Member not found")
 	errAdminOnly      = apperror.Forbidden("Only community admins can do this")
-	errLastAdmin      = apperror.New(http.StatusConflict, "LAST_ADMIN",
+	errLastAdmin      = apperror.New(http.StatusForbidden, "FORBIDDEN",
 		"A community must keep at least one admin; promote another member first")
 )
 
@@ -61,7 +61,10 @@ func (s *Service) Get(ctx context.Context, communityID, userID int64) (*Communit
 	if err != nil {
 		return nil, fmt.Errorf("communities: get: %w", err)
 	}
-	if !d.MyRole.CanSeeInviteCode() {
+	if d.MyRole == nil && d.Visibility == "PRIVATE" {
+		return nil, apperror.Forbidden("This community is invite-only")
+	}
+	if d.MyRole == nil || !d.MyRole.CanSeeInviteCode() {
 		d.InviteCode = nil
 	}
 	return d, nil
@@ -73,6 +76,9 @@ func (s *Service) Create(ctx context.Context, userID int64, req CreateCommunityR
 	description := normalizeDescription(req.Description)
 
 	fields := map[string]string{}
+	if req.Visibility != "PUBLIC" && req.Visibility != "PRIVATE" {
+		fields["visibility"] = "Choose PUBLIC or PRIVATE"
+	}
 	if msg := validateName(name); msg != "" {
 		fields["name"] = msg
 	}
@@ -94,6 +100,23 @@ func (s *Service) Create(ctx context.Context, userID int64, req CreateCommunityR
 				return err
 			}
 			communityID = id
+			if _, err := tx.Exec(ctx, `UPDATE communities SET visibility=$2 WHERE id=$1`, id, req.Visibility); err != nil {
+				return err
+			}
+			if req.Visibility == "PUBLIC" {
+				for _, username := range req.ModeratorUsernames {
+					var moderatorID int64
+					if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE lower(username)=lower($1)`, strings.TrimSpace(username)).Scan(&moderatorID); err != nil {
+						if database.IsNoRows(err) {
+							return apperror.Validation("Unknown moderator", map[string]string{"moderatorUsernames": "Unknown username: " + username})
+						}
+						return err
+					}
+					if _, err := insertMember(ctx, tx, id, moderatorID, RoleModerator); err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		})
 	})
@@ -118,12 +141,28 @@ func (s *Service) Join(ctx context.Context, userID int64, req JoinCommunityReque
 		return nil, fmt.Errorf("communities: join: %w", err)
 	}
 
-	inserted, err := insertMember(ctx, s.pool, communityID, userID, RoleMember)
+	err = database.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := lockCommunity(ctx, tx, communityID); err != nil {
+			return err
+		}
+		var current string
+		if err := tx.QueryRow(ctx, `SELECT invite_code FROM communities WHERE id=$1`, communityID).Scan(&current); err != nil {
+			return err
+		}
+		if current != code {
+			return invalid
+		}
+		inserted, err := insertMember(ctx, tx, communityID, userID, RoleMember)
+		if err != nil {
+			return err
+		}
+		if !inserted {
+			return apperror.New(http.StatusConflict, "ALREADY_MEMBER", "You are already a member of this community")
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("communities: join: %w", err)
-	}
-	if !inserted {
-		return nil, apperror.New(http.StatusConflict, "ALREADY_MEMBER", "You are already a member of this community")
+		return nil, wrap("join", err)
 	}
 	return s.Get(ctx, communityID, userID)
 }

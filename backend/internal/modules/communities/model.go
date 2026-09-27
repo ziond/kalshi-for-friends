@@ -24,13 +24,15 @@ func (r Role) CanSeeInviteCode() bool {
 }
 
 type CommunitySummary struct {
-	ID              int64     `json:"id"`
-	Name            string    `json:"name"`
-	Description     *string   `json:"description"`
-	MemberCount     int64     `json:"memberCount"`
-	OpenMarketCount int64     `json:"openMarketCount"`
-	MyRole          Role      `json:"myRole"`
-	CreatedAt       time.Time `json:"createdAt"`
+	ID              int64               `json:"id"`
+	Name            string              `json:"name"`
+	Description     *string             `json:"description"`
+	MemberCount     int64               `json:"memberCount"`
+	OpenMarketCount int64               `json:"openMarketCount"`
+	MyRole          *Role               `json:"myRole"`
+	Visibility      string              `json:"visibility"`
+	Moderators      []users.UserSummary `json:"moderators"`
+	CreatedAt       time.Time           `json:"createdAt"`
 }
 
 type CommunityDetail struct {
@@ -46,8 +48,10 @@ type CommunityMember struct {
 }
 
 type CreateCommunityRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
+	Visibility         string   `json:"visibility"`
+	ModeratorUsernames []string `json:"moderatorUsernames"`
+	Name               string   `json:"name"`
+	Description        *string  `json:"description"`
 }
 
 type UpdateCommunityRequest struct {

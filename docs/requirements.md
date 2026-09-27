@@ -322,7 +322,7 @@ The **Test** column names the automated test that covers the requirement (paths 
 |---|---|---|---|---|---|
 | LDR-01 | Each community has a leaderboard. | Members are ranked by net profit (winnings minus stakes) within that community, showing correct/total predictions and accuracy. | Should | Not built — API defined, no UI, mock returns placeholders | — |
 | LDR-02 | Prediction stats update when markets settle. | After a market resolves, each participant's total and correct predictions update. Refunded bets don't count. | Should | Backend only | Manual |
-| LDR-03 | The prediction score formula is defined. | `users.prediction_score` has a documented formula agreed by the team. | Should | Not built — formula undecided | — |
+| LDR-03 | The prediction score formula is defined. | `users.prediction_score = round(100 × correct_predictions / total_predictions)`, ties rounded up; 0 with no settled predictions. Count each resolved market once; exclude all refunds. | Should | Implemented locally — migration and database verification pending | `backend/tests/schema.sql`; `backend/internal/router/lifecycle_test.go` |
 
 ### 3.16 Navigation and layout (NAV)
 
@@ -510,7 +510,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 7 | No UI for leaderboards, members, leaving, roles, invite reset, editing, transactions, other profiles. | LDR-01, COM-15–18, WAL-09, USR-07–08 | Not in the Claude Design file. Decide which are MVP. |
 | 8 | Market description can't be entered. | MKT-14 | Add a description field to the create form. |
 | 9 | Search only filters the three trending markets per section. | FEED-06 | Add a `q` parameter to `GET /markets` for server-side search. |
-| 10 | Prediction score formula undefined. | LDR-03 | Agree a formula (e.g. accuracy weighted by number of predictions). |
+| 10 | Prediction score formula agreed with Owen. | LDR-03 | Rounded accuracy × 100, excluding refunds; apply migration 000008 and run database integration tests. |
 | 11 | Design's faint grey text fails contrast. | A11Y-06 | Darken `--color-faint` slightly, or confirm the design choice. |
 | 12 | Deposits have no off switch or rate limit. | WAL-10, SEC-08 | Put the endpoint behind a config flag. |
 | 13 | Schema additions from the contract (visibility, price history, `DEPOSIT` type) need to be in the backend migrations. | COM-*, ODD-03, WAL-03 | Backend to confirm against `api-contract.md` §1 rows 12–15. |

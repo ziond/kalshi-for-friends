@@ -2,6 +2,7 @@ package communities
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5"
 
@@ -15,18 +16,22 @@ const inviteCodeUniqueConstraint = "communities_invite_code_key"
 // Open markets are OPEN and not past their deadline, matching the rule that a
 // market is effectively LOCKED once now >= deadline.
 const summaryColumns = `
-	c.id, c.name, c.description, c.created_at, cm.role,
+	c.id, c.name, c.description, c.created_at, cm.role, c.visibility,
+	COALESCE((SELECT jsonb_agg(jsonb_build_object('id',u.id,'username',u.username,'avatarUrl',u.avatar_url) ORDER BY u.id)
+	 FROM community_members mods JOIN users u ON u.id=mods.user_id
+	 WHERE mods.community_id=c.id AND c.visibility='PUBLIC' AND mods.role IN ('ADMIN','MODERATOR')), '[]'::jsonb),
 	(SELECT count(*) FROM community_members m WHERE m.community_id = c.id),
 	(SELECT count(*) FROM markets mk
 	  WHERE mk.community_id = c.id AND mk.status = 'OPEN' AND mk.deadline > CURRENT_TIMESTAMP)`
 
 func scanSummary(row pgx.Row, s *CommunitySummary, extra ...any) error {
-	dest := append([]any{&s.ID, &s.Name, &s.Description, &s.CreatedAt, &s.MyRole, &s.MemberCount, &s.OpenMarketCount}, extra...)
+	var moderators []byte
+	dest := append([]any{&s.ID, &s.Name, &s.Description, &s.CreatedAt, &s.MyRole, &s.Visibility, &moderators, &s.MemberCount, &s.OpenMarketCount}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return err
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
-	return nil
+	return json.Unmarshal(moderators, &s.Moderators)
 }
 
 func listForUser(ctx context.Context, db database.DBTX, userID int64) ([]CommunitySummary, error) {
@@ -61,7 +66,7 @@ func getDetail(ctx context.Context, db database.DBTX, communityID, userID int64)
 	row := db.QueryRow(ctx, `
 		SELECT `+summaryColumns+`, u.id, u.username, u.avatar_url, c.invite_code
 		FROM communities c
-		JOIN community_members cm ON cm.community_id = c.id AND cm.user_id = $2
+		LEFT JOIN community_members cm ON cm.community_id = c.id AND cm.user_id = $2
 		JOIN users u ON u.id = c.creator_id
 		WHERE c.id = $1`, communityID, userID)
 	err := scanSummary(row, &d.CommunitySummary,

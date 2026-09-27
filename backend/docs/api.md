@@ -1,5 +1,8 @@
 # API Contract (MVP)
 
+> Historical draft. The canonical contract is now `../../docs/api-contract.md`.
+> Implementation and pending verification are tracked in `requirements-alignment.md`.
+
 Contract between the Go backend and the Next.js frontend. Go structs should mirror the TypeScript types below exactly (same field names via `json:"camelCase"` tags).
 
 Status: **draft** — built from the database schema; revisit once screens are finalized.
