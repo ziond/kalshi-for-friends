@@ -18,7 +18,7 @@ Every requirement has a stable ID like `MKT-12`. Reference it in test names, PRs
 |---|---|
 | AUTH | Sign-up, login, JWT access and refresh tokens |
 | USR | Profile and current user |
-| WAL | Points, wallet, deposits, transactions |
+| WAL | Points, wallet, signup and daily bonuses, transactions |
 | COM | Communities (create, view, visibility, roles) |
 | DSC | Discover |
 | INV | Invite links |
@@ -60,6 +60,7 @@ Status reflects the `frontend-dev` branch at the time of writing. The Go backend
 | **Partial** | Some of the acceptance criteria are met; see the note. |
 | **Not built** | Specified but not implemented anywhere yet. |
 | **Backend only** | No UI needed; applies to the Go API and database. |
+| **Withdrawn** | No longer a requirement; kept so the ID is never reused. Not counted in §8. |
 
 ### 1.4 Verified by
 
@@ -71,7 +72,7 @@ The **Test** column names the automated test that covers the requirement (paths 
 | `format.test` | `lib/format.test.ts` |
 | `card.test` | `components/market-card.test.tsx` |
 | `nav.test` | `components/top-nav.test.tsx` |
-| `points.test` | `components/add-points.test.tsx` |
+| `points.test` | `components/points-pill.test.tsx` |
 | `home.test` | `app/(app)/page.test.tsx` |
 | `market.test` | `app/(app)/markets/[marketId]/page.test.tsx` |
 | `community.test` | `app/(app)/communities.test.tsx` |
@@ -98,7 +99,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 
 | Term | Meaning |
 |---|---|
-| **Points** | The in-app currency (called coins in the database). Not real money in the MVP. |
+| **Points** | The in-app currency (called coins in the database). Not real money. Users get 1,000 on signup and can claim 1,000 more every 24 hours (the daily bonus); otherwise points only move through bets, payouts and refunds. |
 | **Community** | A group of users. **Public** ones are listed in Discover and anyone can join; **private** ones are invite-only. |
 | **Market** | A question with two or more outcomes that members bet on, e.g. "Will it snow before Nov 1?". |
 | **Binary market** | A market with exactly two outcomes, Yes and No. |
@@ -145,7 +146,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | AUTH-02 | Usernames are unique and at most 50 characters. | Registering with a taken username fails with a clear error and no account is created. The field won't accept more than 50 characters. | Must | Partial — length enforced in UI; uniqueness is backend only | Manual |
 | AUTH-03 | Emails are unique and valid. | Registering with an existing email or a malformed address fails with a clear error. | Must | Partial — format checked by the browser; uniqueness is backend only | Manual |
 | AUTH-04 | Passwords are at least 8 characters and never stored in plain text. | The form rejects passwords under 8 characters. The database stores only a hash (bcrypt or argon2). | Must | Partial — length in UI; hashing is backend only | Manual |
-| AUTH-05 | Every new account starts with 1,000 points. | Immediately after registering, the balance shows 1,000 pts and an `INITIAL_BONUS` transaction of +1,000 exists. | Must | Backend only | Manual |
+| AUTH-05 | Every new account starts with 1,000 points. | Immediately after registering, the balance shows 1,000 pts and an `INITIAL_BONUS` transaction of +1,000 exists. The first daily bonus (WAL-11) opens 24 hours after signup. | Must | Backend only | Manual |
 | AUTH-06 | A user can log in with email and password. | Correct credentials sign the user in and a full page load takes them to Home (or the `next` page, AUTH-10). Wrong credentials return `401` and show an error that doesn't reveal which field was wrong. | Must | Partial — mock accepts any credentials | `auth.test`, `client.test` |
 | AUTH-07 | Login and register issue an access token and a refresh token as cookies. | Both responses set `access_token` and `refresh_token` cookies with `HttpOnly; SameSite=Lax; Path=/` (plus `Secure` outside localhost). Neither token is readable from JavaScript or stored in localStorage. | Must | Backend only | Manual |
 | AUTH-08 | A user can log out. | "Log out" on the profile calls `POST /auth/logout`, which expires both cookies; cached data is cleared and a full page load goes to `/login`. Visiting an app page afterwards redirects to login. | Must | Built (mock) | `account.test` |
@@ -179,20 +180,24 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | USR-07 | A user can change their username or avatar. | `PATCH /me` updates them; the new name appears everywhere after refresh. | Could | Not built — API only, no UI | — |
 | USR-08 | A user can view another user's public profile. | `/users/:id` shows their username and prediction stats, not their email or balance. | Could | Not built — API only, no UI | — |
 
-### 3.3 Points, wallet and deposits (WAL)
+### 3.3 Points, wallet and daily bonus (WAL)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| WAL-01 | The current balance is always visible. | The top nav shows a balance pill (coin icon + number with thousands separators, e.g. "4,820") on every app page. Its accessible name reads "Balance 4,820 pts — add points". | Must | Built (mock) | `nav.test`, `points.test` |
-| WAL-02 | The balance updates immediately after anything that changes it. | Placing a bet, depositing, or a market resolving/refunding updates the nav balance without a page reload. | Must | Built (mock) | `points.test`, `market.test` |
-| WAL-03 | Users can add points to their own balance (MVP). | Clicking the balance opens "Add points". Choosing +500, +1,000, +5,000 or a custom amount adds exactly that many points and shows "Added N pts." | Must | Built (mock) | `points.test` |
-| WAL-04 | Deposits must be whole numbers from 1 to 1,000,000. | 0, negatives, decimals and values over 1,000,000 are rejected with `VALIDATION_ERROR` and the balance doesn't change. The Add button is disabled for invalid input. | Must | Built (mock) | `api.test`, `points.test` |
-| WAL-05 | A user can only deposit into their own wallet. | The deposit endpoint takes no user ID; it always credits the signed-in user. | Must | Built (mock) | Manual |
-| WAL-06 | The deposit popover closes cleanly. | Clicking outside it or pressing Escape closes it. | Should | Built (mock) | Manual |
+| WAL-01 | The current balance is always visible. | The top nav shows a balance pill (coin icon + number with thousands separators, e.g. "4,820") on every app page. Its accessible name reads "Balance 4,820 pts", plus "— daily 1,000 points ready to claim" when the bonus is waiting. | Must | Built (mock) | `nav.test`, `points.test` |
+| WAL-02 | The balance updates immediately after anything that changes it. | Placing a bet, claiming the daily bonus, or a market paying out or refunding updates the nav balance without a page reload. | Must | Built (mock) | `points.test`, `market.test` |
+| WAL-03 | ~~Users can add points to their own balance (MVP).~~ | **Withdrawn:** free top-ups were removed; points now come from the signup and daily bonuses (WAL-11). | — | Withdrawn | — |
+| WAL-04 | ~~Deposits must be whole numbers from 1 to 1,000,000.~~ | **Withdrawn:** there are no deposits (see WAL-03). | — | Withdrawn | — |
+| WAL-05 | ~~A user can only deposit into their own wallet.~~ | **Withdrawn:** there are no deposits; WAL-12 covers the daily bonus. | — | Withdrawn | — |
+| WAL-06 | The points popover closes cleanly. | Clicking the balance pill opens a popover with the balance and the daily bonus; clicking outside it or pressing Escape closes it. | Should | Built (mock) | Manual |
 | WAL-07 | Balances can never go negative. | No combination of bets, concurrent requests or payouts leaves a wallet below 0. | Must | Backend only (mock checks per bet) | `api.test` |
-| WAL-08 | Every points movement is recorded as a transaction. | Each registration bonus, deposit, bet, win payout and refund writes one transaction row with a signed amount and `balance_after`. The sum of a user's transactions equals their balance. | Must | Backend only | Manual |
+| WAL-08 | Every points movement is recorded as a transaction. | Each signup bonus, daily bonus, bet, win payout and refund writes one transaction row with a signed amount and `balance_after`. The sum of a user's transactions equals their balance. | Must | Backend only | Manual |
 | WAL-09 | Users can see their transaction history. | A page lists transactions newest first with type, amount, resulting balance and market title where relevant. | Could | Not built — API only, no UI | — |
-| WAL-10 | The deposit feature can be switched off before real money exists. | Deposits can be disabled by config without a code change to the rest of the wallet. | Should | Not built | — |
+| WAL-10 | ~~The deposit feature can be switched off before real money exists.~~ | **Withdrawn:** deposits no longer exist. | — | Withdrawn | — |
+| WAL-11 | Users can claim 1,000 points every 24 hours. | When `nextDailyBonusAt` has passed, the balance pill shows a lime gift and dot, and its popover offers "Claim 1,000 pts". Claiming adds exactly 1,000, shows "+1,000 pts added.", writes a `DAILY_BONUS` transaction and sets the next claim to 24 hours later. | Must | Built (mock) | `points.test`, `api.test` |
+| WAL-12 | Daily bonuses don't stack. | At most one bonus is waiting at a time: however long a user is away, their next claim adds 1,000 once, and the 24-hour timer restarts from that claim. Claiming early returns `409 DAILY_BONUS_NOT_READY` ("Your next 1,000 points are ready in 5h 12m") and changes nothing. Only the signed-in user's own wallet can be credited. | Must | Built (mock) | `api.test` |
+| WAL-13 | Users can see when the next bonus opens. | Before it's ready, the popover shows "Next 1,000 pts in h:mm:ss", counting down each second, and explains that bonuses don't stack. When it reaches zero the pill lights up without a reload. | Should | Built (mock) | `points.test` |
+| WAL-14 | Home reminds users to claim. | While a bonus is waiting, Home shows "Your daily 1,000 points are here" with "Claim 1,000 pts" above the hero; after claiming it confirms "+1,000 pts added. Your next drop is in h:mm:ss." It's hidden otherwise. | Should | Built (mock) | `points.test` |
 
 ### 3.4 Communities (COM)
 
@@ -416,7 +421,7 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | API-01 | The API matches the contract. | Every endpoint in [api-contract.md](api-contract.md) exists with the documented path, method, request and response shape. | Must | Built (mock) | `api.test` |
 | API-02 | JSON uses camelCase; IDs are numbers; times are ISO-8601 UTC; points are integers. | Checked on every response. | Must | Built (mock) | Manual |
 | API-03 | Every error uses the same shape. | `{ "error": { "code", "message", "fields"? } }` with the documented HTTP status for each code. | Must | Built (mock) | `api.test` |
-| API-04 | Error codes are the documented ones. | Only `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INSUFFICIENT_FUNDS`, `MARKET_CLOSED`, `ALREADY_MEMBER`, `INVALID_INVITE_CODE`, `OPTION_SWITCH_NOT_ALLOWED` are returned. (`BAD_RESPONSE` exists only in the frontend, see API-11.) | Must | Built (mock) | `api.test` |
+| API-04 | Error codes are the documented ones. | Only `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INSUFFICIENT_FUNDS`, `MARKET_CLOSED`, `ALREADY_MEMBER`, `INVALID_INVITE_CODE`, `OPTION_SWITCH_NOT_ALLOWED`, `DAILY_BONUS_NOT_READY` are returned. (`BAD_RESPONSE` exists only in the frontend, see API-11.) | Must | Built (mock) | `api.test` |
 | API-05 | Validation errors say which field is wrong. | `VALIDATION_ERROR` responses include `fields` naming each invalid field. | Should | Built (mock) | `account.test` |
 | API-06 | Lists are paginated. | List endpoints accept `cursor` and `limit` and return `nextCursor` (null at the end). | Should | Partial — mock honours `limit` only | — |
 | API-07 | Placing a bet returns everything the UI needs. | The response includes the position, the updated market and the new balance, so no second request is needed. | Must | Built (mock) | `api.test` |
@@ -431,12 +436,12 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 |---|---|---|---|---|---|
 | SEC-01 | Every endpoint except register, login and refresh requires a valid access token. | Calling any other endpoint without an `access_token` cookie, or with an invalid or expired one, returns `401 UNAUTHORIZED`. | Must | Backend only | Manual |
 | SEC-02 | Private data stays private. | Non-members can't read a private community, its markets, members or activity through any endpoint. | Must | Built (mock) | `market.test` |
-| SEC-03 | Users act only as themselves. | No endpoint lets a user place bets, deposit, join or resolve on behalf of someone else; the acting user always comes from the verified token's `user_id`, never from the request. | Must | Built (mock) | Manual |
+| SEC-03 | Users act only as themselves. | No endpoint lets a user place bets, claim a bonus, join or resolve on behalf of someone else; the acting user always comes from the verified token's `user_id`, never from the request. | Must | Built (mock) | Manual |
 | SEC-04 | Permission checks happen on the server. | Hiding a button in the UI is never the only protection; every rule in the permission matrix (§5) is enforced by the API. | Must | Built (mock) | `api.test` |
 | SEC-05 | Emails and balances aren't exposed to other users. | `UserSummary` and public profiles never include email or balance. | Must | Built (mock) | Manual |
 | SEC-06 | Inputs are safe to display. | User text (names, questions, descriptions) is shown as plain text; HTML or scripts entered are never executed. | Must | Built (React escapes by default) | Manual |
 | SEC-07 | Login is protected against brute force. | Repeated failed logins from one account or IP are rate-limited. | Should | Not built | — |
-| SEC-08 | Deposits are rate-limited. | A user can't make unlimited deposit requests per minute. | Could | Not built | — |
+| SEC-08 | ~~Deposits are rate-limited.~~ | **Withdrawn:** deposits no longer exist; WAL-12 limits the daily bonus to one claim per 24 hours. | — | Withdrawn | — |
 | SEC-09 | Cookie-based auth is protected against cross-site requests. | Auth cookies are `SameSite=Lax`, every state-changing endpoint is `POST`/`PATCH`/`DELETE` and requires a JSON body, and the API doesn't send permissive CORS headers. | Should | Backend only | Manual |
 | SEC-10 | The only signed-out read is the public invite lookup. | `GET /public/invites/:code` is the one API read that needs no access token. It's rate-limited per IP so invite codes can't be guessed by brute force (INV-05). | Should | Backend only | Manual |
 
@@ -444,13 +449,14 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| DATA-01 | Money-moving actions are all-or-nothing. | Placing a bet, depositing, resolving and nullifying each run in one database transaction; a failure part-way leaves no partial changes. | Must | Backend only | Manual |
+| DATA-01 | Money-moving actions are all-or-nothing. | Placing a bet, claiming the daily bonus, resolving and nullifying each run in one database transaction; a failure part-way leaves no partial changes. | Must | Backend only | Manual |
 | DATA-02 | Simultaneous bets can't overspend. | Two bets sent at the same time from the same user can't together exceed their balance (wallet row is locked during the check). | Must | Backend only | `lifecycle_test` |
 | DATA-03 | Simultaneous resolves can't double-pay. | Two resolve requests at once result in exactly one settlement. | Must | Backend only | `lifecycle_test` |
 | DATA-04 | Pool totals always match the positions. | For every market, each option's total equals the sum of its positions, and the pool equals the sum of all positions. | Must | Backend only | Manual |
-| DATA-05 | Points are conserved. | After settlement, total paid out equals the pool (resolved) or total staked (nullified). No points are created or destroyed except by deposits and sign-up bonuses. | Must | Partial — see RES-06 | Manual |
+| DATA-05 | Points are conserved. | After settlement, total paid out equals the pool (resolved) or total staked (nullified). No points are created or destroyed except by the signup and daily bonuses. | Must | Partial — see RES-06 | Manual |
 | DATA-06 | Uniqueness is enforced in the database. | Unique constraints on username, email, (community, user) membership, one wallet per user and invite codes. | Must | Backend only | Manual |
 | DATA-07 | A payout and a nullify can't both happen. | If a nullify arrives as the grace period ends, exactly one wins: either everyone is refunded and the market is CANCELLED, or winners are paid and the market is RESOLVED (the nullify then gets `MARKET_CLOSED`). The market row is locked during both. | Must | Backend only | `grace_period_test` |
+| DATA-08 | A daily bonus can't be claimed twice. | Two claims sent at the same instant (double click, two tabs) credit 1,000 once; the other gets `DAILY_BONUS_NOT_READY`. The check and the update are one conditional statement on the wallet row. | Must | Backend only | Manual |
 
 ### 4.4 Performance (PERF)
 
@@ -490,7 +496,7 @@ What each actor may do. ✓ = allowed, ✗ = must be refused by the API (403) an
 | Nullify a LOCKED or PAYOUT_PENDING market | ✗ | ✗ | ✗ | ✗ (unless they're its moderator) | ✓ |
 | Switch the picked winner (ever), or nullify after the payout | ✗ | ✗ | ✗ | ✗ | ✗ |
 | View the community leaderboard | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Deposit points into own wallet | ✗ | ✓ | ✓ | ✓ | ✓ |
+| Claim the daily bonus into own wallet | ✗ | ✓ | ✓ | ✓ | ✓ |
 
 **Open question:** should a market's moderator be allowed to bet on that market? The design allows it (Jordan moderates "Trivia champion crowned tonight" and appears as an outcome). Allowing it is a conflict of interest. Decide and add a requirement (proposed **RES-13**).
 
@@ -527,16 +533,19 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 4. Repeat with a second market, but first "Validate" an option, then click "Nullify market" within the 5-minute countdown → both users are refunded at once.
 5. Wait past the original payout time → nobody is paid, the market stays nullified, and the moderator has no buttons left.
 
-**E2E-5 — Guard rails** (BET-04, BET-05, BET-08, MKT-06, WAL-04, RES-01)
+**E2E-5 — Guard rails** (BET-04, BET-05, BET-08, MKT-06, WAL-12, RES-01)
 1. Type a stake above your balance → "That's more than your balance." and the button is disabled. Send one anyway through the API → "You only have N pts".
 2. Bet on Yes, then try No on the same market → "You already bet on "Yes"".
 3. Try to create a market closing yesterday → field error, nothing created.
-4. Try to deposit 0 and 2,000,000 → Add stays disabled.
+4. Claim the daily bonus, then call `POST /me/daily-bonus` again → 409 `DAILY_BONUS_NOT_READY`, balance unchanged.
 5. As a non-moderator, call the resolve endpoint directly → 403.
 
-**E2E-6 — Top up** (WAL-03, WAL-08)
-1. Click the balance pill → +1,000 → balance up 1,000 and "Added 1,000 pts."
-2. Check the database: one `DEPOSIT` transaction of +1,000 with the right `balance_after`.
+**E2E-6 — Daily bonus** (AUTH-05, WAL-08, WAL-11, WAL-12, WAL-13, DATA-08)
+1. Register → balance 1,000; the pill's popover says "Next 1,000 pts in 23:59:…".
+2. Set the user's `next_daily_bonus_at` to the past in the database (or wait 24 hours) → the pill lights up and Home shows "Your daily 1,000 points are here".
+3. Claim → balance 2,000, "+1,000 pts added.", the countdown restarts at ~24:00:00. The database has one `DAILY_BONUS` transaction of +1,000 with the right `balance_after`.
+4. Set `next_daily_bonus_at` to three days ago → claim → only +1,000 (no stacking).
+5. Fire two claims at the same instant (two `curl` calls) → exactly one succeeds.
 
 **E2E-7 — Concurrency** (DATA-02, DATA-03)
 1. With 100 pts, fire two 100-pt bets at the same instant (e.g. two `curl` calls) → exactly one succeeds.
@@ -585,8 +594,8 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 9 | Search only filters the three trending markets per section. | FEED-06 | Add a `q` parameter to `GET /markets` for server-side search. |
 | 10 | Prediction score formula agreed with Owen. | LDR-03 | Rounded accuracy × 100, excluding refunds; apply migration 000008 and run database integration tests. |
 | 11 | The faint label grey (#7F8A81) fails contrast on card and raised surfaces. | A11Y-06 | Lighten `--color-faint` to about #96A197 (passes on all three surfaces), or use the muted grey on cards. |
-| 12 | Deposits have no off switch or rate limit. | WAL-10, SEC-08 | Put the endpoint behind a config flag. |
-| 13 | Schema additions from the contract (visibility, price history, `DEPOSIT` type) need to be in the backend migrations. | COM-*, ODD-03, WAL-03 | Backend to confirm against `api-contract.md` §1 rows 12–15. |
+| 12 | The daily bonus amount (1,000) and interval (24 hours) are fixed. | WAL-11 | Keep both as backend settings. The UI reads `nextDailyBonusAt` and the claimed amount from the API; only its wording ("Claim 1,000 pts") assumes 1,000. |
+| 13 | Schema additions from the contract (visibility, price history, `DAILY_BONUS` type and `wallets.next_daily_bonus_at`) need to be in the backend migrations. | COM-*, ODD-03, WAL-03 | Backend to confirm against `api-contract.md` §1 rows 12–15. |
 | 14 | Auth cookies must use `Path=/`. If the backend scopes `refresh_token` to `/api/v1/auth`, the page guard can't see it and users are sent to login instead of refreshed. | AUTH-07, AUTH-17 | Backend to set `Path=/` on both cookies (see api-contract.md → Authentication). |
 | 15 | Access and refresh token lifetimes aren't agreed. | AUTH-13, AUTH-19 | Suggested: 15 minutes and 7–30 days. |
 | 16 | Auth cookies must not set `Domain`. The browser receives them from the Next.js origin through the `/api/v1` rewrite, so a `Domain` naming the backend host (e.g. an ngrok URL) is rejected and login appears to do nothing. | AUTH-07, AUTH-24 | Backend to omit `Domain` (see api-contract.md → Authentication). |
@@ -605,7 +614,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 |---|---|---|---|---|---|---|
 | AUTH | 24 | 15 | 4 | 0 | 5 | 14 |
 | USR | 8 | 6 | 0 | 2 | 0 | 4 |
-| WAL | 10 | 6 | 0 | 2 | 2 | 5 |
+| WAL | 10 | 7 | 0 | 1 | 2 | 7 |
 | COM | 20 | 15 | 1 | 4 | 0 | 14 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
 | INV | 8 | 7 | 0 | 0 | 1 | 7 |
@@ -622,10 +631,10 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | UX | 7 | 7 | 0 | 0 | 0 | 4 |
 | A11Y | 7 | 4 | 3 | 0 | 0 | 4 |
 | API | 11 | 9 | 1 | 0 | 1 | 8 |
-| SEC | 10 | 5 | 0 | 2 | 3 | 2 |
-| DATA | 7 | 0 | 1 | 0 | 6 | 3 |
+| SEC | 9 | 5 | 0 | 1 | 3 | 2 |
+| DATA | 8 | 0 | 1 | 0 | 7 | 3 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **213** | **165** | **14** | **13** | **21** | **139** |
+| **Total** | **213** | **166** | **14** | **11** | **22** | **141** |
 
-Counts are a snapshot; the tables in §3 and §4 are authoritative. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.
+Counts are a snapshot; the tables in §3 and §4 are authoritative. Withdrawn requirements aren't counted. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.
