@@ -83,6 +83,8 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *fiber.App {
 	api.Patch("/me", requireAuth, usersHandler.UpdateMe)
 	api.Get("/users/:id", requireAuth, paid, usersHandler.GetProfile)
 	api.Get("/invites/:code", requireAuth, communitiesHandler.InvitePreview)
+	// The one signed-out read: link previews and the signed-out invite page.
+	api.Get("/public/invites/:code", middleware.PublicInviteLimit(), communitiesHandler.PublicInvite)
 
 	c := api.Group("/communities", requireAuth)
 	c.Get("/", communitiesHandler.List)

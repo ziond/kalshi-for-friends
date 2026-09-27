@@ -287,6 +287,16 @@ func TestCommunityLifecycle(t *testing.T) {
 	}
 	expect(t, call(t, app, http.MethodPost, "/communities/join", zion, map[string]string{"inviteCode": code}), http.StatusConflict, "ALREADY_MEMBER")
 
+	// INV-07: the public lookup needs no sign-in and reveals only name, visibility and member count.
+	public := call(t, app, http.MethodGet, "/public/invites/"+strings.ToLower(code), "", nil)
+	expect(t, public, http.StatusOK, "")
+	pc, _ := public.body["community"].(map[string]any)
+	if len(public.body) != 2 || public.body["inviteCode"] != code || len(pc) != 3 ||
+		pc["name"] != "Hackathon Team" || pc["visibility"] != "PRIVATE" || pc["memberCount"] != float64(2) {
+		t.Fatalf("public invite: %v", public.body)
+	}
+	expect(t, call(t, app, http.MethodGet, "/public/invites/NOPE", "", nil), http.StatusNotFound, "INVALID_INVITE_CODE")
+
 	list := call(t, app, http.MethodGet, "/communities", zion, nil)
 	expect(t, list, http.StatusOK, "")
 	if len(list.list) != 1 {
