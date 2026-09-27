@@ -10,7 +10,7 @@ export const ACCESS_TOKEN_COOKIE = "access_token";
 export const REFRESH_TOKEN_COOKIE = "refresh_token";
 
 const ALGORITHM = "EdDSA";
-const DEFAULT_KEY_PATH = "keys/public.pem";
+const DEFAULT_KEY_PATH = "public.pem";
 
 export interface AccessTokenClaims {
   userId: number;

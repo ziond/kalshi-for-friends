@@ -1,19 +1,42 @@
-# Local configuration and credentials
+# Dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js build output
+/.next/
+/out/
+/build
+
+# Test coverage
+/coverage
+
+# TypeScript / Next.js generated files
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment variables and keys (keep the template)
 .env
 .env.*
 !.env.example
 *.pem
 
-# Go build and test output
-/backend/bin/
-/backend/tmp/
-*.test
-coverage.out
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# Local editor and OS files
+# Deployment
+.vercel
+
+# Editors and OS
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/
-
-node_modules
-.next
