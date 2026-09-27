@@ -10,15 +10,26 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, verifyAccessToken } from "@/lib/auth/jwt";
 import { safeNextPath } from "@/lib/auth/redirect";
+import { TUNNEL_HEADERS } from "@/lib/api/tunnel";
 
 const PUBLIC_PATHS = ["/login", "/register"];
+
+/**
+ * Pages anyone may open without signing in: invite links (they show a sign-up/log-in card to
+ * signed-out visitors) and link-preview images. Link-preview bots never have cookies, so
+ * redirecting these to /login would make every shared invite preview as the login page.
+ */
+function isOpenPath(pathname: string) {
+  // Preview images exist only at the site root and on invites (Next may add a -<id> suffix).
+  return pathname.startsWith("/invite/") || /^(\/invite\/[^/]+)?\/(opengraph|twitter)-image(-\w+)?$/.test(pathname);
+}
 
 async function refreshTokens(request: NextRequest): Promise<string[] | null> {
   const apiUrl = process.env.API_URL ?? "http://localhost:8080";
   try {
     const res = await fetch(`${apiUrl}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { cookie: request.headers.get("cookie") ?? "" },
+      headers: { cookie: request.headers.get("cookie") ?? "", ...TUNNEL_HEADERS },
       cache: "no-store",
     });
     return res.ok ? res.headers.getSetCookie() : null;
@@ -37,13 +48,14 @@ export async function proxy(request: NextRequest) {
 
   const { pathname, search } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.includes(pathname);
+  const isOpen = isOpenPath(pathname);
 
   let claims;
   try {
     claims = await verifyAccessToken(request.cookies.get(ACCESS_TOKEN_COOKIE)?.value);
   } catch (error) {
     console.error("[proxy] Can't load the JWT public key (set JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH):", error);
-    return isPublic
+    return isPublic || isOpen
       ? NextResponse.next()
       : new NextResponse("Server auth is misconfigured: JWT public key missing.", { status: 500 });
   }
@@ -60,6 +72,8 @@ export async function proxy(request: NextRequest) {
     const setCookies = await refreshTokens(request);
     if (setCookies) return withCookies(NextResponse.next(), setCookies);
   }
+
+  if (isOpen) return NextResponse.next();
 
   const login = new URL("/login", request.url);
   login.searchParams.set("next", pathname + search);

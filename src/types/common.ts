@@ -47,7 +47,9 @@ export type ApiErrorCode =
   | "MARKET_CLOSED"
   | "ALREADY_MEMBER"
   | "INVALID_INVITE_CODE"
-  | "OPTION_SWITCH_NOT_ALLOWED";
+  | "OPTION_SWITCH_NOT_ALLOWED"
+  /** Frontend-only: the API answered with something that isn't JSON. Never sent by the backend. */
+  | "BAD_RESPONSE";
 
 export interface ApiErrorBody {
   error: {

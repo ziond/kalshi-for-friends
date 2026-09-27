@@ -244,6 +244,22 @@ describe("communities", () => {
   });
 });
 
+describe("public invite details", () => {
+  it("returns only name, visibility and member count, without signing in", async () => {
+    const { mockRequest } = await import("./handlers");
+    const invite = await mockRequest("GET", "/public/invites/HUD1X7Q2P", {}, undefined);
+    expect(invite).toEqual({
+      inviteCode: "HUD1X7Q2P",
+      community: { name: "Fantasy Football Legends", visibility: "PRIVATE", memberCount: 24 },
+    });
+  });
+
+  it("rejects an invalid code", async () => {
+    const { mockRequest } = await import("./handlers");
+    await expectApiError(mockRequest("GET", "/public/invites/BOGUS", {}, undefined), "INVALID_INVITE_CODE");
+  });
+});
+
 describe("creating a market", () => {
   it("rejects a deadline in the past", async () => {
     await expectApiError(

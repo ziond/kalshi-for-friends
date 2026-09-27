@@ -52,9 +52,28 @@ describe("proxy route guard", () => {
     expect(redirectTarget(res)).toBe("/login?next=%2Fmarkets%2F2%3Ftab%3Dactivity");
   });
 
-  it("sends invite links through login too", async () => {
-    const res = await proxy(request("/invite/HUD1X7Q2P"));
-    expect(redirectTarget(res)).toBe("/login?next=%2Finvite%2FHUD1X7Q2P");
+  it("lets signed-out visitors and link-preview bots open invite links and preview images", async () => {
+    for (const path of ["/invite/HUD1X7Q2P", "/invite/HUD1X7Q2P/opengraph-image", "/opengraph-image"]) {
+      const res = await proxy(request(path));
+      expect(res.headers.get("x-middleware-next"), path).toBe("1");
+    }
+  });
+
+  it("still refreshes an expired session on an invite link", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {
+      status: 204, headers: { "set-cookie": "access_token=new; Path=/; HttpOnly" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await proxy(request("/invite/HUD1X7Q2P", { refresh_token: "old-refresh" }));
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(res.headers.get("set-cookie")).toContain("access_token=new");
+  });
+
+  it("keeps other preview-looking paths guarded", async () => {
+    const res = await proxy(request("/markets/opengraph-image-gallery"));
+    expect(res.status).toBe(307);
   });
 
   it("refreshes an expired access token and passes the new cookies to the browser", async () => {
@@ -74,7 +93,10 @@ describe("proxy route guard", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://backend.test/api/v1/auth/refresh",
-      expect.objectContaining({ method: "POST", headers: { cookie: expect.stringContaining("refresh_token=old-refresh") } }),
+      expect.objectContaining({
+        method: "POST",
+        headers: { cookie: expect.stringContaining("refresh_token=old-refresh"), "ngrok-skip-browser-warning": "1" },
+      }),
     );
     expect(res.headers.get("x-middleware-next")).toBe("1");
     expect(res.headers.getSetCookie()).toEqual([

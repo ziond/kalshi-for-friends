@@ -31,6 +31,16 @@ export interface InvitePreview {
   alreadyMember: boolean;
 }
 
+/**
+ * The minimum about an invite that anyone with the link may see, signed in or not: used for
+ * link previews (Open Graph) and the signed-out invite page. Anyone with the code can join,
+ * so this reveals nothing extra. No description, moderators or member list.
+ */
+export interface PublicInvite {
+  inviteCode: string;
+  community: Pick<CommunitySummary, "name" | "visibility" | "memberCount">;
+}
+
 export interface CommunityMember {
   user: UserSummary;
   role: Role;

@@ -2,6 +2,7 @@ import type { ApiErrorBody } from "@/types";
 import { loginUrl } from "@/lib/auth/redirect";
 import { ApiError } from "./errors";
 import { mockRequest } from "./mock/handlers";
+import { TUNNEL_HEADERS } from "./tunnel";
 
 export { ApiError };
 
@@ -35,7 +36,7 @@ function cleanQuery(query?: Query): Record<string, string> {
 let refreshing: Promise<boolean> | null = null;
 
 function refreshSession(): Promise<boolean> {
-  refreshing ??= fetch(`${BASE_PATH}/auth/refresh`, { method: "POST", credentials: "include" })
+  refreshing ??= fetch(`${BASE_PATH}/auth/refresh`, { method: "POST", credentials: "include", headers: TUNNEL_HEADERS })
     .then((res) => res.ok, () => false)
     .finally(() => (refreshing = null));
   return refreshing;
@@ -60,7 +61,7 @@ async function request<T>(
       method,
       signal,
       credentials: "include",
-      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: body !== undefined ? { ...TUNNEL_HEADERS, "Content-Type": "application/json" } : TUNNEL_HEADERS,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
@@ -83,6 +84,12 @@ async function request<T>(
   }
 
   if (res.status === 204) return undefined as T;
+  // Anything but JSON here means something between us and the API answered instead
+  // (a tunnel warning page, a proxy error page, a wrong API_URL).
+  if (!(res.headers.get("content-type") ?? "").includes("application/json")) {
+    throw new ApiError(502, "BAD_RESPONSE",
+      "The server sent an unexpected response. Check that the backend is running and API_URL is correct.");
+  }
   return res.json() as Promise<T>;
 }
 

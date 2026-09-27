@@ -83,6 +83,7 @@ The **Test** column names the automated test that covers the requirement (paths 
 | `leaderboard.test` | `app/(app)/leaderboard.test.tsx` |
 | `ranking.test` | `lib/leaderboard.test.ts` |
 | `live.test` | `app/(app)/markets/[marketId]/live.test.tsx` |
+| `invite.test` | `app/invite/[code]/invite.test.tsx` |
 
 Backend tests live on `backend-dev` (paths relative to the backend root). Run them with `go test -p 1 ./...` and `TEST_DATABASE_URL` pointing at a disposable, migrated PostgreSQL database; without it the database tests are skipped.
 
@@ -113,6 +114,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | **Deadline / closes** | The time after which no more bets are accepted. |
 | **Win rate** | Share of a member's settled predictions (won or lost, not refunded) in a community that were correct. Ranks the community leaderboard. |
 | **Live market** | A market that can still change: OPEN (taking bets), LOCKED (waiting for the moderator) or PAYOUT_PENDING (in its grace period). Its page polls for updates. |
+| **Link preview** | The card a chat app (iMessage, WhatsApp, Discord, Slack…) shows for a pasted link, built from the page's Open Graph title, description and image. |
 | **Groups** | The app's name for the list of communities you belong to (`/communities`). |
 | **Role** | A user's rank in a community: `ADMIN` (the creator, shown as "Creator"), `MODERATOR` or `MEMBER`. |
 
@@ -122,7 +124,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 
 | Actor | Description |
 |---|---|
-| **Visitor** | Not signed in. Can only reach the login and register pages. |
+| **Visitor** | Not signed in. Can reach the login and register pages, and invite links (which show a sign-up/log-in card). |
 | **User** | Signed in. Can join communities, bet, create communities and markets. |
 | **Member** | A user who belongs to a given community. |
 | **Community creator (ADMIN)** | Created the community. Can share its invite link. |
@@ -147,9 +149,9 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | AUTH-06 | A user can log in with email and password. | Correct credentials sign the user in and a full page load takes them to Home (or the `next` page, AUTH-10). Wrong credentials return `401` and show an error that doesn't reveal which field was wrong. | Must | Partial — mock accepts any credentials | `auth.test`, `client.test` |
 | AUTH-07 | Login and register issue an access token and a refresh token as cookies. | Both responses set `access_token` and `refresh_token` cookies with `HttpOnly; SameSite=Lax; Path=/` (plus `Secure` outside localhost). Neither token is readable from JavaScript or stored in localStorage. | Must | Backend only | Manual |
 | AUTH-08 | A user can log out. | "Log out" on the profile calls `POST /auth/logout`, which expires both cookies; cached data is cleared and a full page load goes to `/login`. Visiting an app page afterwards redirects to login. | Must | Built (mock) | `account.test` |
-| AUTH-09 | Visitors can't see app pages. | With the real backend, opening any page except `/login` and `/register` without a valid access token (and no usable refresh token) redirects to `/login`. | Must | Built | `proxy.test` |
+| AUTH-09 | Visitors can't see app pages. | With the real backend, opening any page except `/login`, `/register`, invite links (`/invite/:code`) and link-preview images without a valid access token (and no usable refresh token) redirects to `/login`. | Must | Built | `proxy.test` |
 | AUTH-10 | After logging in from a redirect, the user returns to where they were going. | Being redirected from `/markets/5?tab=x` goes to `/login?next=%2Fmarkets%2F5%3Ftab%3Dx`; signing in lands on `/markets/5?tab=x`. The register link keeps `next`. | Should | Built | `proxy.test`, `client.test` |
-| AUTH-11 | Invite links work for signed-out visitors. | A visitor opening `/invite/:code` is sent to log in or register, then lands back on the invite to accept it. | Should | Built | `proxy.test` |
+| AUTH-11 | Invite links work for signed-out visitors. | A visitor opening `/invite/:code` isn't redirected. They see the group's name, privacy and member count with "Create an account to join" and "I already have an account", which go to `/register` or `/login` with `next=/invite/:code`; after signing in they land back on the invite to accept it. | Should | Built | `invite.test`, `proxy.test` |
 | AUTH-12 | Login and register pages link to each other. | "Create an account" and "Log in" links switch between the two pages. | Could | Built (mock) | Manual |
 | AUTH-13 | Access tokens are EdDSA-signed JWTs carrying the user's ID. | The `access_token` header is `alg: EdDSA` (Ed25519) and the payload contains `user_id` (a positive integer), `exp` and `iat`. Lifetime is short (suggested 15 minutes). | Must | Backend only | Manual |
 | AUTH-14 | The frontend verifies access tokens with the backend's public key. | The route guard accepts a token only if its EdDSA signature verifies against `public.pem`, it hasn't expired, and it has a valid `user_id`. Expired, tampered, wrongly-signed, `alg: none`, or `user_id`-less tokens are rejected. | Must | Built | `jwt.test`, `proxy.test` |
@@ -235,6 +237,9 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | INV-03 | Existing members aren't asked to join again. | If the user is already a member, the page says so and links straight to the community. | Must | Built (mock) | `community.test` |
 | INV-04 | Invalid codes are rejected. | An unknown code shows "That invite link isn't valid" (`INVALID_INVITE_CODE`). | Must | Built (mock) | `api.test`, `community.test` |
 | INV-05 | Invite codes are hard to guess. | Codes are random, at least 8 characters, and unique across communities. | Should | Backend only | Manual |
+| INV-06 | Shared invite links show an inviting preview. | Pasting an invite link into a chat app shows the title "Join <group> on called it.", a description with privacy and member count, and a 1200×630 lime image: "You're invited to join <group>", "<N> members making predictions" and "Tap to join →". Group names over 60 characters are shortened at a word. | Should | Built (mock) | `invite.test` |
+| INV-07 | The public invite details reveal only what the link already grants. | `GET /public/invites/:code` works without signing in and returns only the group's name, visibility and member count (no description, moderators or members). Unknown codes return `404 INVALID_INVITE_CODE`. | Must | Built (mock) | `api.test` |
+| INV-08 | A broken lookup never looks like a bad link. | If the invite can't be looked up (API down or unreachable), the signed-out page and the preview show a generic invitation ("You're invited to join a group on called it.") with the same buttons; "That invite link isn't valid" appears only when the API says the code doesn't exist. | Should | Built | `invite.test` |
 
 ### 3.7 Creating and viewing markets (MKT)
 
@@ -372,6 +377,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | NAV-05 | Unknown pages show a not-found screen. | Visiting an unknown URL, or a market/community ID that doesn't exist, shows a clear "not found" message. | Should | Partial — missing IDs show the API error text | Manual |
 | NAV-06 | The browser tab is titled "called it." | Page title is "called it." | Could | Built (mock) | Manual |
 | NAV-07 | Phones get a bottom tab bar. | Below 768px wide a fixed bar shows Home, Discover, Create (new market), Groups and Profile, with icons and labels; page content isn't hidden behind it. | Must | Built (mock) | `nav.test` |
+| NAV-08 | Other shared links have a branded preview. | Any page without its own preview uses a default 1200×630 image ("Someone's getting exposed today.") with the site name. | Could | Built | Manual |
 
 ### 3.17 Loading, empty and error states; formatting (UX)
 
@@ -410,12 +416,14 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | API-01 | The API matches the contract. | Every endpoint in [api-contract.md](api-contract.md) exists with the documented path, method, request and response shape. | Must | Built (mock) | `api.test` |
 | API-02 | JSON uses camelCase; IDs are numbers; times are ISO-8601 UTC; points are integers. | Checked on every response. | Must | Built (mock) | Manual |
 | API-03 | Every error uses the same shape. | `{ "error": { "code", "message", "fields"? } }` with the documented HTTP status for each code. | Must | Built (mock) | `api.test` |
-| API-04 | Error codes are the documented ones. | Only `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INSUFFICIENT_FUNDS`, `MARKET_CLOSED`, `ALREADY_MEMBER`, `INVALID_INVITE_CODE`, `OPTION_SWITCH_NOT_ALLOWED` are returned. | Must | Built (mock) | `api.test` |
+| API-04 | Error codes are the documented ones. | Only `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INSUFFICIENT_FUNDS`, `MARKET_CLOSED`, `ALREADY_MEMBER`, `INVALID_INVITE_CODE`, `OPTION_SWITCH_NOT_ALLOWED` are returned. (`BAD_RESPONSE` exists only in the frontend, see API-11.) | Must | Built (mock) | `api.test` |
 | API-05 | Validation errors say which field is wrong. | `VALIDATION_ERROR` responses include `fields` naming each invalid field. | Should | Built (mock) | `account.test` |
 | API-06 | Lists are paginated. | List endpoints accept `cursor` and `limit` and return `nextCursor` (null at the end). | Should | Partial — mock honours `limit` only | — |
 | API-07 | Placing a bet returns everything the UI needs. | The response includes the position, the updated market and the new balance, so no second request is needed. | Must | Built (mock) | `api.test` |
 | API-08 | The frontend reaches the API through `/api/v1`. | In real-backend mode the browser calls `/api/v1/*` on the Next.js site, which proxies to `API_URL`. | Must | Built | Manual |
 | API-09 | Polled endpoints are safe to call every few seconds. | `GET /markets/:id` and `GET /markets/:id/activity` send `Cache-Control: no-store` (so no proxy or browser serves stale odds) and aren't rate-limited below one request per 5 seconds per viewer. | Must | Backend only | `grace_period_test` (no-store); rate limit Manual |
+| API-10 | The app works through a free ngrok tunnel. | With `API_URL` pointing at an ngrok URL, every API call (including token refresh from the browser and the route guard) sends `ngrok-skip-browser-warning: 1`, so ngrok forwards it to the API instead of returning its browser warning page. Signed-in pages show the user's name and balance. | Must | Built | `client.test`, `proxy.test` |
+| API-11 | Unexpected non-JSON responses are reported, not shown as empty data. | If a call succeeds but the response isn't JSON (a tunnel page, a proxy error page, a wrong `API_URL`), the client raises `BAD_RESPONSE` (frontend-only) with "The server sent an unexpected response. Check that the backend is running and API_URL is correct." | Should | Built | `client.test` |
 
 ### 4.2 Security and authorization (SEC)
 
@@ -430,6 +438,7 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | SEC-07 | Login is protected against brute force. | Repeated failed logins from one account or IP are rate-limited. | Should | Not built | — |
 | SEC-08 | Deposits are rate-limited. | A user can't make unlimited deposit requests per minute. | Could | Not built | — |
 | SEC-09 | Cookie-based auth is protected against cross-site requests. | Auth cookies are `SameSite=Lax`, every state-changing endpoint is `POST`/`PATCH`/`DELETE` and requires a JSON body, and the API doesn't send permissive CORS headers. | Should | Backend only | Manual |
+| SEC-10 | The only signed-out read is the public invite lookup. | `GET /public/invites/:code` is the one API read that needs no access token. It's rate-limited per IP so invite codes can't be guessed by brute force (INV-05). | Should | Backend only | Manual |
 
 ### 4.3 Data integrity and concurrency (DATA)
 
@@ -497,10 +506,10 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 3. Open "Will it snow in NYC before Nov 1?" → pick Yes → enter 100 → "Stake 100 points" → "Confirm stake".
 4. See "Staked 100 pts on Yes.", balance 900, Yes percentage up, your bet at the top of Recent activity.
 
-**E2E-2 — Private community with friends** (COM-01, COM-06, COM-12, INV-01, INV-02, MKT-07)
+**E2E-2 — Private community with friends** (COM-01, COM-06, COM-12, INV-01, INV-02, AUTH-11, MKT-07)
 1. User A creates a private community "Test Crew".
 2. A opens "Invite people" and copies the link.
-3. User B (another browser) opens the link → sees Test Crew's details → Accept & join.
+3. User B (another browser, signed out) opens the link → sees "You're invited to join Test Crew" with the member count → "Create an account to join" → registers → lands back on the invite → Accept & join.
 4. A creates a Yes/No market in Test Crew closing in 10 minutes, choosing B as moderator.
 5. B sees the market; a signed-in user C who isn't a member gets "This community is invite-only".
 
@@ -552,6 +561,11 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 4. Let the market close; the moderator validates an option from a third browser → within ~5 s A sees "<option> picked as the winner" and the countdown; when it ends A sees the outcome banner, and A's balance updates if A won.
 5. After it's resolved, the network tab shows no more polling.
 
+**E2E-11 — Invite link preview** (INV-06, INV-07, INV-08, AUTH-11) — needs the site on a public URL (e.g. Vercel)
+1. Copy a private group's invite link and paste it into Discord, Slack or iMessage (or an Open Graph checker such as opengraph.xyz).
+2. The preview shows "Join <group> on called it.", the member count, and the lime "You're invited to join <group>" image.
+3. Stop the backend and paste a new link (or clear the checker's cache) → the preview shows the generic "Your friends are waiting." invitation, not an error.
+
 ---
 
 ## 7. Known gaps and open decisions
@@ -580,6 +594,8 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 18 | Should the stake confirmation step be skippable for small stakes? | BET-14 | Decide after user testing. |
 | 19 | Live updates use polling (every 5 s), so they lag by up to 5 s and cost 2 requests per viewer per 5 s even when nothing changes. Only the market page is live; Home, community and Mod queue pages update on navigation or window focus. | ODD-08, API-09, PERF-04 | Fine for the MVP. Post-MVP, push changes over Server-Sent Events or WebSockets, or support conditional requests (`ETag` / `If-None-Match` → `304`) to make idle polls cheap. |
 | 20 | The 5-minute grace period is fixed. | RES-16 | The backend reads it from one setting, `PAYOUT_GRACE_MINUTES` (default 5). The UI reads `payoutAt` from the API, so changing it needs no frontend change except the "5 minutes" wording (`PAYOUT_GRACE_MINUTES` in the frontend). Keep the two in sync. |
+| 21 | Free ngrok tunnels intercept browser requests with a warning page. | API-10 | Handled by the frontend header. For shared testing, a paid ngrok plan or another tunnel avoids the page entirely. |
+| 22 | Link previews only work on a public URL. Chat apps fetch the link themselves, so `localhost` or a LAN address never previews, and apps cache a preview for hours or days after first seeing a link. | INV-06, NAV-08 | Check previews after deploying to Vercel (image URLs use its production URL automatically). Use each app's cache-busting or debug tool when testing changes. |
 
 ---
 
@@ -592,7 +608,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | WAL | 10 | 6 | 0 | 2 | 2 | 5 |
 | COM | 20 | 15 | 1 | 4 | 0 | 14 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
-| INV | 5 | 4 | 0 | 0 | 1 | 4 |
+| INV | 8 | 7 | 0 | 0 | 1 | 7 |
 | MKT | 15 | 14 | 1 | 0 | 0 | 10 |
 | ODD | 8 | 8 | 0 | 0 | 0 | 7 |
 | BET | 15 | 14 | 1 | 0 | 0 | 11 |
@@ -602,14 +618,14 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | FEED | 7 | 6 | 0 | 1 | 0 | 6 |
 | ACT | 3 | 3 | 0 | 0 | 0 | 3 |
 | LDR | 5 | 3 | 1 | 1 | 0 | 4 |
-| NAV | 7 | 6 | 1 | 0 | 0 | 4 |
+| NAV | 8 | 7 | 1 | 0 | 0 | 4 |
 | UX | 7 | 7 | 0 | 0 | 0 | 4 |
 | A11Y | 7 | 4 | 3 | 0 | 0 | 4 |
-| API | 9 | 7 | 1 | 0 | 1 | 6 |
-| SEC | 9 | 5 | 0 | 2 | 2 | 2 |
+| API | 11 | 9 | 1 | 0 | 1 | 8 |
+| SEC | 10 | 5 | 0 | 2 | 3 | 2 |
 | DATA | 7 | 0 | 1 | 0 | 6 | 3 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **206** | **159** | **14** | **13** | **20** | **134** |
+| **Total** | **213** | **165** | **14** | **13** | **21** | **139** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.

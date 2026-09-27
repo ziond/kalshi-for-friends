@@ -36,6 +36,8 @@ Status: **draft, authoritative for the backend** — the Go API implements what 
 - Coins are integers only.
 - Auth: JWTs in httpOnly cookies — see [Authentication](#authentication) below.
 - Lists use cursor pagination: `?cursor=&limit=`.
+- Every request from the frontend (browser calls and the route guard's refresh) carries `ngrok-skip-browser-warning: 1`. Free ngrok tunnels otherwise answer browser requests with an HTML warning page (`ERR_NGROK_6024`, status 200) instead of forwarding them to the API. The backend can ignore the header; if the API is ever called cross-origin, add it to `Access-Control-Allow-Headers`.
+- Every response with a body is JSON (`Content-Type: application/json`). The frontend treats any other successful response as an error.
 - All errors share one shape:
 
 ```json
@@ -74,7 +76,7 @@ The Go backend issues two JWTs and sends both as cookies. No server-side session
 - **Backend checks on every protected endpoint:** verify the `access_token` signature and `exp`, take the acting user from `user_id` (never from the request body), and return `401 UNAUTHORIZED` if the token is missing, invalid or expired.
 
 **How the frontend uses them:**
-1. **Page requests:** `proxy.ts` verifies `access_token` with the public key. If it's invalid and a `refresh_token` exists, the proxy calls `POST {API_URL}/api/v1/auth/refresh`, forwards the new `Set-Cookie` headers to the browser, and lets the page load. Otherwise it redirects to `/login?next=<path>`.
+1. **Page requests:** `proxy.ts` verifies `access_token` with the public key. Invite pages (`/invite/:code`) and link-preview images are open to everyone, because link-preview bots never send cookies; signed-out visitors there get a sign-up/log-in card instead of a redirect. If it's invalid and a `refresh_token` exists, the proxy calls `POST {API_URL}/api/v1/auth/refresh`, forwards the new `Set-Cookie` headers to the browser, and lets the page load. Otherwise it redirects to `/login?next=<path>`.
 2. **API calls from the browser:** on a `401`, the client calls `/auth/refresh` once, retries the original request, and redirects to `/login?next=<path>` if it still fails. Simultaneous 401s share one refresh call.
 3. **After login, register and logout:** the frontend does a full page load to `next` (or `/`, or `/login` after logout) rather than a client-side route change, so the guard reads the cookies the response just set. The cookies must therefore be set on the `/auth/login` and `/auth/register` responses themselves.
 
@@ -136,6 +138,11 @@ interface InvitePreview {      // shown on /invite/:code before joining
   inviteCode: string;
   community: Pick<CommunitySummary, 'id' | 'name' | 'description' | 'visibility' | 'memberCount' | 'moderators'>;
   alreadyMember: boolean;
+}
+
+interface PublicInvite {       // GET /public/invites/:code — no sign-in; link previews and the signed-out invite page
+  inviteCode: string;
+  community: Pick<CommunitySummary, 'name' | 'visibility' | 'memberCount'>;  // nothing else: no description, moderators or members
 }
 
 interface CommunityMember { user: UserSummary; role: Role; joinedAt: ISODate; }
@@ -286,7 +293,7 @@ interface CancelMarketRequest  { reason?: string; }
 
 ## 5. Routes
 
-All routes are prefixed with `/api/v1`. Every route requires a valid `access_token` cookie except `POST /auth/register`, `POST /auth/login` and `POST /auth/refresh`.
+All routes are prefixed with `/api/v1`. Every route requires a valid `access_token` cookie except `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` and `GET /public/invites/:code`.
 
 ### Auth and current user
 
@@ -314,6 +321,7 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | GET | `/communities/discover` | any | — | `CommunitySummary[]` — all PUBLIC communities, joined or not |
 | POST | `/communities/join` | any | `JoinCommunityRequest` | `CommunityDetail` — join via invite code |
 | GET | `/invites/:code` | any | — | `InvitePreview` |
+| GET | `/public/invites/:code` | **no sign-in** | — | `PublicInvite`, or `404 INVALID_INVITE_CODE`. Called server-side by the Next.js app (no cookies, no `Origin`) to build link previews and the signed-out invite page. Rate-limit per IP; may send `Cache-Control: public, max-age=300` |
 | GET | `/communities/:id` | member, or anyone if PUBLIC | — | `CommunityDetail` |
 | POST | `/communities/:id/join` | any, PUBLIC only | — | `CommunityDetail` |
 | PATCH | `/communities/:id` | admin | `UpdateCommunityRequest` | `CommunityDetail` |
@@ -386,5 +394,7 @@ Each of these must run inside a single database transaction.
 | `ALREADY_MEMBER` | 409 |
 | `INVALID_INVITE_CODE` | 404 |
 | `OPTION_SWITCH_NOT_ALLOWED` | 409 |
+
+`BAD_RESPONSE` (502) is frontend-only: the client uses it when a response isn't JSON (e.g. a tunnel or proxy page). The API never sends it.
 
 `MARKET_CLOSED` covers every action the market's status doesn't allow: betting after the deadline, picking a winner when one is already picked (message: "A winner has already been picked. You can only nullify this market") or the market is settled, and nullifying after the payout.

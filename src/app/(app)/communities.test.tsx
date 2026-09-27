@@ -8,7 +8,7 @@ import CommunitiesPage from "./communities/page";
 import CreateCommunityPage from "./communities/new/page";
 import CommunityPage from "./communities/[communityId]/page";
 import DiscoverPage from "./discover/page";
-import InvitePage from "./invite/[code]/page";
+import { InviteView } from "../invite/[code]/invite-view";
 
 const waitForPush = (path: string) =>
   waitFor(() => expect(navigation.router.push).toHaveBeenCalledWith(path));
@@ -98,8 +98,7 @@ describe("Invite link", () => {
     const { communities } = await import("@/lib/api/mock/db");
     communities.find((c) => c.id === 3)!.memberIds = [5, 6]; // Jordan not a member yet
     communities.find((c) => c.id === 3)!.creatorId = 5;
-    navigation.params = { code: "HUD3X7Q2P" };
-    const { user } = renderWithClient(<InvitePage />);
+    const { user } = renderWithClient(<InviteView code="HUD3X7Q2P" />);
 
     expect(await screen.findByRole("heading", { name: "Crypto Degens Only" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Accept & join" }));
@@ -108,15 +107,13 @@ describe("Invite link", () => {
   });
 
   it("tells members they've already joined", async () => {
-    navigation.params = { code: "HUD1X7Q2P" };
-    renderWithClient(<InvitePage />);
+    renderWithClient(<InviteView code="HUD1X7Q2P" />);
 
     expect(await screen.findByRole("link", { name: /already a member/ })).toHaveAttribute("href", "/communities/1");
   });
 
   it("rejects an invalid code", async () => {
-    navigation.params = { code: "BOGUS" };
-    renderWithClient(<InvitePage />);
+    renderWithClient(<InviteView code="BOGUS" />);
 
     expect(await screen.findByText("That invite link isn't valid")).toBeInTheDocument();
   });

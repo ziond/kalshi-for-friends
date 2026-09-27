@@ -40,8 +40,34 @@ describe("api client (real backend)", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/markets/2/positions", expect.objectContaining({
       method: "POST",
       credentials: "include",
+      headers: { "ngrok-skip-browser-warning": "1", "Content-Type": "application/json" },
       body: JSON.stringify({ optionId: 3, amount: 10 }),
     }));
+  });
+
+  it("asks ngrok tunnels to skip their browser warning page on every call, including refresh", async () => {
+    fetchMock
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(new Response(null, { status: 204 })) // refresh
+      .mockResolvedValueOnce(json(200, { username: "Jordan" }));
+    const { api } = await loadClient();
+
+    await api.get("/me");
+
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init.headers).toMatchObject({ "ngrok-skip-browser-warning": "1" });
+    }
+  });
+
+  it("reports a non-JSON answer (e.g. a tunnel or proxy page) as an error instead of empty data", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("<!DOCTYPE html><html>ngrok</html>", {
+      status: 200, headers: { "Content-Type": "text/html", "ngrok-error-code": "ERR_NGROK_6024" },
+    }));
+    const { api } = await loadClient();
+
+    await expect(api.get("/me")).rejects.toMatchObject({
+      status: 502, code: "BAD_RESPONSE", message: expect.stringContaining("API_URL"),
+    });
   });
 
   it("refreshes tokens after a 401 and retries the request once", async () => {

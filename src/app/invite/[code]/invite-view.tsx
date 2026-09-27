@@ -1,18 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Avatar, Button, Card, ErrorNote, Skeleton } from "@/components/ui";
 import { useInvitePreview, useJoinByInvite } from "@/hooks/use-communities";
 
-export default function InvitePage() {
-  const { code } = useParams<{ code: string }>();
+/** The invite for a signed-in user: preview the community and accept. */
+export function InviteView({ code }: { code: string }) {
   const router = useRouter();
   const { data: invite, error, isLoading } = useInvitePreview(code);
   const join = useJoinByInvite();
 
   return (
-    <div className="mx-auto my-15 max-w-[480px] px-4 sm:px-8">
+    <div className="w-full max-w-[480px]">
       {isLoading && <Skeleton className="h-72" />}
       {!isLoading && !invite && <ErrorNote error={error} />}
       {invite && (

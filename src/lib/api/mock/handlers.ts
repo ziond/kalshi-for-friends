@@ -22,6 +22,7 @@ import type {
   PlacePositionRequest,
   PlacePositionResponse,
   Position,
+  PublicInvite,
   ResolveMarketRequest,
   Role,
   UserSummary,
@@ -332,6 +333,13 @@ const routes: [string, RegExp, Handler][] = [
       c.memberCount++;
     }
     return communityDetail(c);
+  }],
+
+  // No sign-in needed: link-preview bots and signed-out visitors use it.
+  ["GET", /^\/public\/invites\/([^/]+)$/, ([code]): PublicInvite => {
+    const c = communities.find((x) => x.inviteCode === decodeURIComponent(code));
+    if (!c) throw new ApiError(404, "INVALID_INVITE_CODE", "That invite link isn't valid");
+    return { inviteCode: c.inviteCode, community: { name: c.name, visibility: c.visibility, memberCount: c.memberCount } };
   }],
 
   ["GET", /^\/invites\/([^/]+)$/, ([code]): InvitePreview => {
