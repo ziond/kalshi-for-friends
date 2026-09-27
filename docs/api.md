@@ -4,6 +4,9 @@
 > Implementation and pending verification are tracked in [requirements-alignment.md](requirements-alignment.md).
 > Outdated here: resolving no longer pays out immediately. A pick starts a 5-minute
 > payout grace period (`PAYOUT_PENDING`); see api-contract.md, schema decision 16 and §6.
+> Points now come only from the signup bonus and `POST /me/daily-bonus` (decision 17);
+> there is no deposit or refill endpoint. `GET /public/invites/:code` is the one
+> signed-out read.
 
 Contract between the Go backend and the Next.js frontend. Go structs should mirror the TypeScript types below exactly (same field names via `json:"camelCase"` tags).
 

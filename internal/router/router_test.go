@@ -56,9 +56,10 @@ func setup(t *testing.T) (*fiber.App, *pgxpool.Pool) {
 		RefreshTTL:      7 * 24 * time.Hour,
 		CookieName:      "access_token",
 		CookieSameSite:  "Lax",
-		InitialBalance:  1000,
-		DepositsEnabled: true,
-		PayoutGrace:     5 * time.Minute,
+		InitialBalance:     1000,
+		DailyBonusPoints:   1000,
+		DailyBonusInterval: 24 * time.Hour,
+		PayoutGrace:        5 * time.Minute,
 	}
 	return router.New(cfg, pool), pool
 }

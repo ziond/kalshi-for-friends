@@ -1,5 +1,9 @@
 # Team coordination
 
+> Historical: the original ownership split and handoff from the first backend
+> baseline. Current status is in [requirements-alignment.md](requirements-alignment.md);
+> the schema is in [database.md](database.md) and all migrations through 000010 are applied.
+
 ## Proposed ownership
 
 | Owner | Modules |

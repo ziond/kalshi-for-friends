@@ -15,12 +15,14 @@ Each file is an explicit transaction, so a failed file rolls back its DDL.
 | 000007 | DEPOSIT transactions |
 | 000008 | calculate_prediction_score, score backfill |
 | 000009 | PAYOUT_PENDING status, settlements.payout_at / paid_out_at |
+| 000010 | wallets.next_daily_bonus_at, DAILY_BONUS transaction type |
 
 Use the golang-migrate CLI with PostgreSQL support. It maintains schema version,
 migration locking, and dirty state. Do not run individual files manually against
 a shared database: that bypasses version tracking.
 
-From `backend/`, with a database URL supplied in your shell environment:
+From the repository root, with a database URL supplied in your shell environment
+(`migrate` does not read `.env`):
 
 ```sh
 migrate -path migrations -database "$DATABASE_URL" version

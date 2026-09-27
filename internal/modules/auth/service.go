@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,13 +25,15 @@ const (
 type Service struct {
 	pool           *pgxpool.Pool
 	initialBalance int64
+	// dailyBonusInterval delays the first daily bonus until one interval after signup.
+	dailyBonusInterval time.Duration
 	// dummyHash keeps login timing similar whether or not the email exists.
 	dummyHash []byte
 }
 
-func NewService(pool *pgxpool.Pool, initialBalance int64) *Service {
+func NewService(pool *pgxpool.Pool, initialBalance int64, dailyBonusInterval time.Duration) *Service {
 	dummy, _ := bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcrypt.DefaultCost)
-	return &Service{pool: pool, initialBalance: initialBalance, dummyHash: dummy}
+	return &Service{pool: pool, initialBalance: initialBalance, dailyBonusInterval: dailyBonusInterval, dummyHash: dummy}
 }
 
 // Register creates the user, their wallet, and the INITIAL_BONUS ledger
@@ -64,7 +67,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*users.Me,
 		if err != nil {
 			return err
 		}
-		if err := openWalletWithInitialBonus(ctx, tx, userID, s.initialBalance); err != nil {
+		if err := openWalletWithInitialBonus(ctx, tx, userID, s.initialBalance, s.dailyBonusInterval); err != nil {
 			return err
 		}
 		me, err = users.GetMe(ctx, tx, userID)

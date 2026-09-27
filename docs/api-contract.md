@@ -26,6 +26,7 @@ Status: **draft, authoritative for the backend** — the Go API implements what 
 | 14 | When moderators act | The moderator can pick a winner only once the market is `LOCKED` (past its deadline), and can nullify while it's `LOCKED` or `PAYOUT_PENDING`. "Nullify" = cancel + refund, immediate and final |
 | 15 | "Probability history" chart | Needs history. Add `market_price_snapshots(market_id, taken_at, probabilities JSONB)`, and write a row on market creation and after every position. Alternatively, rebuild the history from `positions` on read. Return the full history: the UI's 1H / 24H / ALL toggles filter it client-side using each point's `at` |
 | 16 | Payout grace period | Picking a winner doesn't pay out. It inserts the settlement with `payout_at = resolved_at + 5 minutes` (`PAYOUT_GRACE_MINUTES`, one backend setting) and sets status `PAYOUT_PENDING`; no coins move and positions stay `PENDING`. The pick is final: it can never be switched to another outcome, so until `payout_at` the moderator's only option is to nullify (refund everyone, final). A second pick for any option, including the same one, is rejected and changes nothing. At `payout_at` a scheduled job — or the next read, if the job is late — pays out, sets `paid_out_at` and status `RESOLVED`. Add `settlements.payout_at` and `settlements.paid_out_at`, and allow `PAYOUT_PENDING` in the `markets.status` check |
+| 17 | Points economy (MVP) | 1,000 points on signup (`INITIAL_BONUS`) and 1,000 more claimable every 24 hours (`DAILY_BONUS`); no other way to add points. Add `wallets.next_daily_bonus_at TIMESTAMPTZ NOT NULL` (set to `created_at + 24h` at signup, backfill existing wallets to `now()`), allow `DAILY_BONUS` in the transaction type check, and remove the deposit endpoint. Amount and interval are backend settings |
 
 ## 2. Conventions
 
@@ -99,7 +100,8 @@ type MarketType = 'BINARY' | 'MULTIPLE_CHOICE';
 type MarketStatus = 'OPEN' | 'LOCKED' | 'PAYOUT_PENDING' | 'RESOLVED' | 'CANCELLED';
 // OPEN → LOCKED (deadline) → PAYOUT_PENDING (winner picked, grace period) → RESOLVED (paid out)
 // LOCKED | PAYOUT_PENDING → CANCELLED (nullified, refunded, final)
-type TransactionType = 'INITIAL_BONUS' | 'DEPOSIT' | 'PLACE_POSITION' | 'WIN_REWARD' | 'LOSS' | 'REFUND';
+type TransactionType = 'INITIAL_BONUS' | 'DAILY_BONUS' | 'DEPOSIT' | 'PLACE_POSITION' | 'WIN_REWARD' | 'LOSS' | 'REFUND';
+// DEPOSIT is legacy (free top-ups, removed); keep it only so existing rows still parse. Never create it.
 type PositionResult = 'PENDING' | 'WON' | 'LOST' | 'REFUNDED';
 
 interface Paginated<T> { items: T[]; nextCursor: string | null; }
@@ -118,7 +120,15 @@ interface UserStats {
 interface Me extends UserSummary, UserStats {
   email: string;
   balance: number;             // joined from wallets so the navbar needs one call
+  nextDailyBonusAt: ISODate;   // when the next daily bonus can be claimed; claimable once in the past
+                               // (signup + 24h at first, then last claim + 24h)
   createdAt: ISODate;
+}
+
+interface DailyBonusResponse { // POST /me/daily-bonus
+  amount: number;              // 1000 (DAILY_BONUS_POINTS)
+  balance: number;             // new wallet balance
+  nextDailyBonusAt: ISODate;   // now + 24h
 }
 
 interface UserProfile extends UserSummary, UserStats { createdAt: ISODate; }
@@ -291,7 +301,6 @@ interface MarketListParams {   // query string for GET /markets
   limit?: number;
 }
 
-interface DepositRequest { amount: number; }  // MVP: whole points, 1–1,000,000, no payment
 
 interface PlacePositionRequest { optionId: ID; amount: number; }  // whole number, 1 <= amount <= balance (the UI pre-checks the balance; the API must still enforce it)
 interface ResolveMarketRequest { winningOptionId: ID; notes?: string; }
@@ -306,7 +315,7 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 
 | Method | Route | Body | Returns |
 |---|---|---|---|
-| POST | `/auth/register` | `RegisterRequest` | `Me` + sets `access_token` and `refresh_token` cookies — also creates wallet + `INITIAL_BONUS` transaction |
+| POST | `/auth/register` | `RegisterRequest` | `Me` + sets `access_token` and `refresh_token` cookies — also creates wallet (1,000 points, `next_daily_bonus_at = now + 24h`) + `INITIAL_BONUS` transaction |
 | POST | `/auth/login` | `LoginRequest` | `Me` + sets `access_token` and `refresh_token` cookies. `401 UNAUTHORIZED` for wrong email or password |
 | POST | `/auth/refresh` | — (uses the `refresh_token` cookie) | `204` + new `access_token` and `refresh_token` cookies, or `401` |
 | POST | `/auth/logout` | — | `204` + clears both cookies |
@@ -314,7 +323,7 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | PATCH | `/me` | `UpdateMeRequest` | `Me` |
 | GET | `/me/positions?status=open\|settled&cursor=` | — | `Paginated<Position>` |
 | GET | `/me/wallet` | — | `Wallet` |
-| POST | `/me/wallet/deposit` | `DepositRequest` | `Wallet` — MVP only: adds free points to the caller's own wallet and writes a `DEPOSIT` transaction. Remove or gate it before real money |
+| POST | `/me/daily-bonus` | — | `DailyBonusResponse` — adds 1,000 points if `nextDailyBonusAt` has passed and sets it to now + 24h; writes a `DAILY_BONUS` transaction. Otherwise `409 DAILY_BONUS_NOT_READY` ("Your next 1,000 points are ready in 5h 12m") and nothing changes. Missed days don't stack. (Replaces the removed `POST /me/wallet/deposit`.) |
 | GET | `/me/transactions?cursor=` | — | `Paginated<Transaction>` |
 | GET | `/me/mod-queue` | — | `ModQueue` — polled every 5 s while `payoutPending` isn't empty; `Cache-Control: no-store` |
 | GET | `/users/:id` | — | `UserProfile` |
@@ -357,10 +366,12 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 
 Each of these must run inside a single database transaction.
 
-**Deposit points (MVP)**
-1. Validate `1 ≤ amount ≤ 1,000,000` and that it's an integer.
-2. `UPDATE wallets SET balance = balance + $amount` for the caller's own wallet.
-3. Insert a `DEPOSIT` transaction with `balance_after`.
+**Claim the daily bonus** (`POST /me/daily-bonus`)
+1. In one statement, credit and move the timer only if it's due, so double clicks and parallel requests can't claim twice:
+   `UPDATE wallets SET balance = balance + 1000, next_daily_bonus_at = now() + interval '24 hours', updated_at = now() WHERE user_id = $me AND next_daily_bonus_at <= now() RETURNING balance, next_daily_bonus_at`.
+2. No row returned → `409 DAILY_BONUS_NOT_READY`, with the time left in the message; nothing changes.
+3. Insert a `DAILY_BONUS` transaction of +1,000 with `balance_after`.
+4. Don't stack: the new time is always claim time + 24 hours, however late the claim.
 
 **Place a position**
 1. Lock the wallet row (`SELECT … FOR UPDATE`).
@@ -401,6 +412,9 @@ Each of these must run inside a single database transaction.
 | `ALREADY_MEMBER` | 409 |
 | `INVALID_INVITE_CODE` | 404 |
 | `OPTION_SWITCH_NOT_ALLOWED` | 409 |
+| `DAILY_BONUS_NOT_READY` | 409 |
+
+Rate limits answer `429` with code `FORBIDDEN` and `Retry-After: 60`: `POST /auth/register` and `POST /auth/login` allow 30 requests a minute per IP, and `GET /public/invites/:code` allows 120. The Next.js server makes every public invite lookup, so all link previews and signed-out visitors share its budget.
 
 `BAD_RESPONSE` (502) is frontend-only: the client uses it when a response isn't JSON (e.g. a tunnel or proxy page). The API never sends it.
 

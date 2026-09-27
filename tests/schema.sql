@@ -180,9 +180,10 @@ SELECT pg_temp.expect_error(
     $$INSERT INTO transactions (user_id, amount, transaction_type, balance_after, request_key) VALUES (1, 100, 'POINT_REFILL', 1300, 'refill:claim-1')$$, '23505');
 
 -- Removing current membership preserves the user's historical stakes and ledger.
+-- ON DELETE RESTRICT raises restrict_violation (23001), not foreign_key_violation (23503).
 DELETE FROM community_members WHERE community_id = 1 AND user_id = 1;
-SELECT pg_temp.expect_error($$DELETE FROM users WHERE id = 1$$, '23503');
-SELECT pg_temp.expect_error($$DELETE FROM markets WHERE id = 1$$, '23503');
+SELECT pg_temp.expect_error($$DELETE FROM users WHERE id = 1$$, '23001');
+SELECT pg_temp.expect_error($$DELETE FROM markets WHERE id = 1$$, '23001');
 
 DO $$
 BEGIN
@@ -196,7 +197,7 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'LDR-03: score calculation or rounding is incorrect';
     END IF;
-    IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'public') <> 11 THEN
+    IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_migrations') <> 11 THEN
         RAISE EXCEPTION 'Expected exactly 11 MVP tables';
     END IF;
     IF (SELECT count(*) FROM positions WHERE market_id = 1 AND user_id = 1) <> 2 THEN

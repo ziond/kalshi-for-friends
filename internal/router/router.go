@@ -45,7 +45,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *fiber.App {
 
 	requireAuth := middleware.RequireAuth("access_token", auth.NewVerifier(cfg))
 
-	authHandler := auth.NewHandler(auth.NewService(pool, cfg.InitialBalance), cfg.JWTPrivateKey, cfg.SessionTTL, cfg.RefreshTTL, auth.CookieConfig{
+	authHandler := auth.NewHandler(auth.NewService(pool, cfg.InitialBalance, cfg.DailyBonusInterval), cfg.JWTPrivateKey, cfg.SessionTTL, cfg.RefreshTTL, auth.CookieConfig{
 		Name:     cfg.CookieName,
 		Domain:   cfg.CookieDomain,
 		Secure:   cfg.CookieSecure,
@@ -77,9 +77,9 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *fiber.App {
 	api.Get("/me/positions", requireAuth, paid, marketAPI.Positions)
 	api.Get("/me/transactions", requireAuth, paid, marketAPI.Transactions)
 	api.Get("/me/mod-queue", requireAuth, paid, marketAPI.ModQueue)
-	walletAPI := &points.API{Pool: pool, DepositsEnabled: cfg.DepositsEnabled}
+	walletAPI := &points.API{Pool: pool, DailyBonusPoints: cfg.DailyBonusPoints, DailyBonusInterval: cfg.DailyBonusInterval}
 	api.Get("/me/wallet", requireAuth, paid, walletAPI.Get)
-	api.Post("/me/wallet/deposit", requireAuth, walletAPI.Deposit)
+	api.Post("/me/daily-bonus", requireAuth, walletAPI.DailyBonus)
 	api.Patch("/me", requireAuth, usersHandler.UpdateMe)
 	api.Get("/users/:id", requireAuth, paid, usersHandler.GetProfile)
 	api.Get("/invites/:code", requireAuth, communitiesHandler.InvitePreview)
