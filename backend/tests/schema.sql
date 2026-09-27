@@ -172,8 +172,18 @@ SELECT pg_temp.expect_error($$DELETE FROM markets WHERE id = 1$$, '23503');
 
 DO $$
 BEGIN
-    IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'public') <> 10 THEN
-        RAISE EXCEPTION 'Expected exactly 10 MVP tables';
+    IF EXISTS (
+        SELECT 1 FROM (VALUES
+            (0::bigint,0::bigint,0::bigint), (0,3,0), (1,3,33),
+            (2,3,67), (1,8,13), (7,8,88), (3,3,100),
+            (1073741823,2147483647,50)
+        ) AS examples(correct,total,expected)
+        WHERE calculate_prediction_score(correct,total) <> expected
+    ) THEN
+        RAISE EXCEPTION 'LDR-03: score calculation or rounding is incorrect';
+    END IF;
+    IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'public') <> 11 THEN
+        RAISE EXCEPTION 'Expected exactly 11 MVP tables';
     END IF;
     IF (SELECT count(*) FROM positions WHERE market_id = 1 AND user_id = 1) <> 2 THEN
         RAISE EXCEPTION 'Same-option additions must retain separate positions';
