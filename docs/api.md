@@ -6,7 +6,7 @@
 > payout grace period (`PAYOUT_PENDING`); see api-contract.md, schema decision 16 and §6.
 > Points now come only from the signup bonus and `POST /me/daily-bonus` (decision 17);
 > there is no deposit or refill endpoint. `GET /public/invites/:code` is the one
-> signed-out read.
+> signed-out read. Invite codes expire after 15 minutes (decision 18).
 
 Contract between the Go backend and the Next.js frontend. Go structs should mirror the TypeScript types below exactly (same field names via `json:"camelCase"` tags).
 

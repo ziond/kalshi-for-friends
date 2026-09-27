@@ -15,6 +15,7 @@ See [alignment and verification status](docs/requirements-alignment.md) before d
   role changes, and remove/leave (a community always keeps at least one admin).
 - Invites: `GET /invites/:code` (signed in) and `GET /public/invites/:code`, the one
   signed-out read, which returns only name, visibility and member count for link previews.
+  Invite codes expire 15 minutes after creation or `POST /communities/:id/invite-code`.
 
 Market creation/feed/detail, positions/activity/history, settlement/refunds,
 mod queue, transaction history and leaderboards are implemented too. Run the
@@ -28,7 +29,9 @@ environment variables. Use `.env.example` for a new setup; do not overwrite an
 existing `.env`. Keep passwords and private keys out of Git.
 
 Use your existing matching Ed25519 PKCS#8 `private.pem` and SPKI `public.pem`
-in the repository root. The loader parses them into Go Ed25519 keys and checks that they
+in the repository root, or put the keys in environment variables instead (see the
+table): on hosts without the key files, such as Vercel, set `JWT_PRIVATE_KEY` alone
+and the public key is derived from it. The loader parses them into Go Ed25519 keys and checks that they
 match. It does not regenerate or overwrite them. Then start:
 
 ```sh
@@ -40,10 +43,10 @@ go run ./cmd/server
 | `DATABASE_URL` | unset | PostgreSQL connection string; takes precedence over `DB_*` |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` | `localhost`, `5432`, `kalshi_for_friends`, `kalshi_app` | Used when `DATABASE_URL` is absent |
 | `DB_PASSWORD`, `DB_SSLMODE` | required, `disable` | Local database credentials; use TLS for hosted connections |
-| `JWT_PRIVATE_KEY` | unset | Ed25519 PKCS#8 PEM; takes precedence over the key file. Literal `\n` is accepted |
-| `JWT_PRIVATE_KEY_FILE` | `private.pem` | Used when inline key is absent; never share the private key |
-| `JWT_PUBLIC_KEY_FILE` | `public.pem` | SPKI Ed25519 verification key; must match private key |
-| `JWT_PUBLIC_KEY` | unset | Optional inline public PEM, overriding the file |
+| `JWT_PRIVATE_KEY` | unset | Ed25519 PKCS#8 PEM; takes precedence over the key file. Accepts the PEM with real newlines, with literal `\n`, or base64-encoded (`base64 -w0 private.pem`) |
+| `JWT_PRIVATE_KEY_FILE` | `private.pem` | Used when `JWT_PRIVATE_KEY` is absent; never share the private key |
+| `JWT_PUBLIC_KEY` | unset | Optional SPKI public PEM (same formats), overriding the file |
+| `JWT_PUBLIC_KEY_FILE` | `public.pem` | Used when `JWT_PUBLIC_KEY` is absent; must match the private key. If neither is set and `public.pem` doesn't exist, the public key is derived from the private key. A file named here explicitly must exist |
 | `HTTP_HOST` | `127.0.0.1` | Set `0.0.0.0` explicitly to expose the API on the LAN |
 | `PORT` | `8080` | |
 | `APP_ENV` | `development` | `production` turns on secure cookies by default |

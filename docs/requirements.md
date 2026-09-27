@@ -97,6 +97,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | `router_test` | `internal/router/router_test.go` |
 | `points_test` | `internal/modules/points/api_test.go` |
 | `rate_limit_test` | `internal/middleware/rate_limit_test.go` |
+| `invite_expiry_test` | `internal/router/invite_expiry_test.go` |
 | `schema.sql` | `tests/schema.sql` (database constraints; run by `scripts/test-migrations.sh`) |
 
 ### 1.5 Glossary
@@ -212,18 +213,18 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | COM-03 | Public communities have community moderators. | When creating a public community the creator can add moderators by username; the creator is always a moderator too. The page shows "moderated by <names>". | Must | Built (mock) | `community.test` |
 | COM-04 | Unknown moderator usernames are handled. | Adding a username that doesn't exist either shows an error or is ignored with a visible notice — never silently creates a user. | Should | Partial — mock silently ignores unknown names | Manual |
 | COM-05 | Private communities don't have community moderators. | Choosing Private hides the moderator picker and explains that each market gets its own moderator. | Must | Built (mock) | `community.test` |
-| COM-06 | Private communities get an invite code. | A private community has a unique invite code from the moment it's created. | Must | Built (mock) | `api.test` |
+| COM-06 | Private communities get an invite code. | A private community has a unique invite code from the moment it's created, valid for 15 minutes (INV-09). | Must | Built (mock) | `api.test` |
 | COM-07 | The community page shows the community's details. | Shows avatar, name, Public/Private badge, member count, moderators and description, plus a "Leaderboard" button for members (LDR-05). | Must | Built (mock) | `community.test`, `leaderboard.test` |
 | COM-08 | The community page lists its markets. | All markets in the community appear as cards, highest volume first. Shows "No markets yet — start one." when empty. | Must | Built (mock) | `community.test` |
 | COM-09 | Members can start a market from the community page. | Members see "+ New market", which opens the create form with this community pre-selected. Non-members don't see it. | Must | Built (mock) | `community.test` |
 | COM-10 | Non-members can join a public community from its page. | A non-member sees "Join community". Clicking it makes them a MEMBER, hides the button and shows "+ New market". | Must | Built (mock) | `community.test` |
 | COM-11 | Private communities are hidden from non-members. | Opening a private community (or any of its markets) as a non-member shows "This community is invite-only" and no content. The API returns 403 `FORBIDDEN`. | Must | Built (mock) | `market.test` |
-| COM-12 | The creator of a private community can share its invite link. | "Invite people" opens a dialog with the full link `<site>/invite/<code>`, a Copy button, and "Preview what invitees see". Escape or Close dismisses it. | Must | Built (mock) | `community.test` |
+| COM-12 | The creator of a private community can share its invite link. | "Invite people" opens a dialog with the full link `<site>/invite/<code>`, a Copy button, and "Preview what invitees see". Escape or Close dismisses it. The link works when shared: it hasn't expired (INV-09). | Must | Partial — the dialog works, but links expire 15 minutes after the community is created and there's no UI to issue a new one (COM-17, open issue 23) | `community.test` |
 | COM-13 | Only creators and moderators see the invite code. | Members get `inviteCode: null` from the API and don't see "Invite people". | Must | Built (mock) | Manual |
 | COM-14 | Each community gets a consistent avatar colour. | The same community always shows the same colour everywhere, picked from the design palette by its ID. | Could | Built (mock) | `format.test` |
 | COM-15 | A user can leave a community. | Leaving removes their membership. Their existing bets stay and still settle. | Should | Not built — API only, no UI | — |
 | COM-16 | The creator can remove members and change roles. | Creator can promote a member to MODERATOR, demote them, or remove them. | Could | Not built — API only, no UI | — |
-| COM-17 | The creator can issue a new invite code. | Generating a new code makes the old link stop working. | Could | Not built — API only, no UI | — |
+| COM-17 | The creator can issue a new invite code. | Generating a new code makes the old link stop working and starts a fresh 15-minute window (INV-09). | Could | Not built — API only, no UI | `invite_expiry_test` |
 | COM-18 | The creator can edit the name and description. | Changes appear everywhere after save. | Could | Not built — API only, no UI | — |
 | COM-19 | A user can't join the same community twice. | Joining again returns 409 `ALREADY_MEMBER`; the database has a unique (community, user) constraint. | Must | Built (mock) | `api.test` |
 | COM-20 | Users can see all their communities in one place. | `/communities` ("Groups" in the nav) lists every community the user belongs to with privacy, member count and a Creator/Moderator chip where it applies, plus "+ New community" and a link to Discover. Communities the user hasn't joined aren't listed. | Must | Built (mock) | `community.test` |
@@ -244,11 +245,12 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | INV-01 | An invite link shows what the user is joining. | Once signed in (AUTH-11), `/invite/<code>` shows the community's avatar, name, description, member count and moderators before joining. | Must | Built (mock) | `community.test` |
 | INV-02 | Accepting an invite joins the community. | "Accept & join" makes the user a MEMBER and opens the community page. | Must | Built (mock) | `community.test` |
 | INV-03 | Existing members aren't asked to join again. | If the user is already a member, the page says so and links straight to the community. | Must | Built (mock) | `community.test` |
-| INV-04 | Invalid codes are rejected. | An unknown code shows "That invite link isn't valid" (`INVALID_INVITE_CODE`). | Must | Built (mock) | `api.test`, `community.test` |
+| INV-04 | Invalid codes are rejected. | An unknown, replaced or expired code shows "That invite link isn't valid" (`INVALID_INVITE_CODE`). | Must | Built (mock) | `api.test`, `community.test` |
 | INV-05 | Invite codes are hard to guess. | Codes are random, at least 8 characters, and unique across communities. | Should | Backend only | Manual |
 | INV-06 | Shared invite links show an inviting preview. | Pasting an invite link into a chat app shows the title "Join <group> on called it.", a description with privacy and member count, and a 1200×630 lime image: "You're invited to join <group>", "<N> members making predictions" and "Tap to join →". Group names over 60 characters are shortened at a word. | Should | Built (mock) | `invite.test` |
-| INV-07 | The public invite details reveal only what the link already grants. | `GET /public/invites/:code` works without signing in and returns only the group's name, visibility and member count (no description, moderators or members). Unknown codes return `404 INVALID_INVITE_CODE`. | Must | Built (mock + API) | `api.test`, `router_test` |
+| INV-07 | The public invite details reveal only what the link already grants. | `GET /public/invites/:code` works without signing in and returns only the group's name, visibility and member count (no description, moderators or members). Unknown and expired codes return `404 INVALID_INVITE_CODE`. | Must | Built (mock + API) | `api.test`, `router_test`, `invite_expiry_test` |
 | INV-08 | A broken lookup never looks like a bad link. | If the invite can't be looked up (API down or unreachable), the signed-out page and the preview show a generic invitation ("You're invited to join a group on called it.") with the same buttons; "That invite link isn't valid" appears only when the API says the code doesn't exist. | Should | Built | `invite.test` |
+| INV-09 | Invite links expire after 15 minutes. | A code works for 15 minutes after the community is created or the code is regenerated. After that the invite page, the public lookup and joining all return `404 INVALID_INVITE_CODE`, and membership doesn't change. Opening or previewing a link never extends it; only issuing a new code (COM-17) starts a new 15 minutes. Both invite lookups send `Cache-Control: no-store`. | Must | Partial — API only; the mock never expires codes and the UI doesn't say links expire | `invite_expiry_test` |
 
 ### 3.7 Creating and viewing markets (MKT)
 
@@ -516,9 +518,9 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 3. Open "Will it snow in NYC before Nov 1?" → pick Yes → enter 100 → "Stake 100 points" → "Confirm stake".
 4. See "Staked 100 pts on Yes.", balance 900, Yes percentage up, your bet at the top of Recent activity.
 
-**E2E-2 — Private community with friends** (COM-01, COM-06, COM-12, INV-01, INV-02, AUTH-11, MKT-07)
+**E2E-2 — Private community with friends** (COM-01, COM-06, COM-12, INV-01, INV-02, INV-09, AUTH-11, MKT-07)
 1. User A creates a private community "Test Crew".
-2. A opens "Invite people" and copies the link.
+2. A opens "Invite people" and copies the link. Steps 2–3 must finish within 15 minutes of step 1, because the link expires then (INV-09).
 3. User B (another browser, signed out) opens the link → sees "You're invited to join Test Crew" with the member count → "Create an account to join" → registers → lands back on the invite → Accept & join.
 4. A creates a Yes/No market in Test Crew closing in 10 minutes, choosing B as moderator.
 5. B sees the market; a signed-in user C who isn't a member gets "This community is invite-only".
@@ -609,6 +611,8 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 20 | The 5-minute grace period is fixed. | RES-16 | The backend reads it from one setting, `PAYOUT_GRACE_MINUTES` (default 5). The UI reads `payoutAt` from the API, so changing it needs no frontend change except the "5 minutes" wording (`PAYOUT_GRACE_MINUTES` in the frontend). Keep the two in sync. |
 | 21 | Free ngrok tunnels intercept browser requests with a warning page. | API-10 | Handled by the frontend header. For shared testing, a paid ngrok plan or another tunnel avoids the page entirely. |
 | 22 | Link previews only work on a public URL. Chat apps fetch the link themselves, so `localhost` or a LAN address never previews, and apps cache a preview for hours or days after first seeing a link. | INV-06, NAV-08 | Check previews after deploying to Vercel (image URLs use its production URL automatically). Use each app's cache-busting or debug tool when testing changes. |
+| 23 | Invite links expire 15 minutes after they're issued, but nothing in the UI can issue a new code, so a private community's "Invite people" link stops working 15 minutes after the community is created. | INV-09, COM-12, COM-17 | Frontend: add "Get a new link" to the invite dialog (calls `POST /communities/:id/invite-code`, client already has `rotateInviteCode`) and say the link lasts 15 minutes. Backend: consider returning `inviteExpiresAt` with `inviteCode` so the dialog can show time left. |
+| 24 | The frontend caches the public invite lookup for 5 minutes (`revalidate: 300` in `lib/api/public-invite.ts`), so a signed-out page or preview can still show a group up to 5 minutes after its link expired. | INV-06, INV-09 | Frontend: fetch with `cache: "no-store"` to match the API. Chat apps also cache previews for hours (issue 22), so an old preview can outlive the link either way; joining still fails correctly. |
 
 ---
 
@@ -619,9 +623,9 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | AUTH | 24 | 15 | 4 | 0 | 5 | 15 |
 | USR | 8 | 6 | 0 | 2 | 0 | 4 |
 | WAL | 10 | 7 | 0 | 1 | 2 | 8 |
-| COM | 20 | 15 | 1 | 4 | 0 | 14 |
+| COM | 20 | 14 | 2 | 4 | 0 | 15 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
-| INV | 8 | 7 | 0 | 0 | 1 | 7 |
+| INV | 9 | 7 | 1 | 0 | 1 | 8 |
 | MKT | 15 | 14 | 1 | 0 | 0 | 10 |
 | ODD | 8 | 8 | 0 | 0 | 0 | 7 |
 | BET | 15 | 14 | 1 | 0 | 0 | 11 |
@@ -639,6 +643,6 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | DATA | 8 | 0 | 1 | 0 | 7 | 4 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **213** | **166** | **14** | **10** | **22** | **146** |
+| **Total** | **214** | **165** | **16** | **10** | **22** | **148** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. Withdrawn requirements aren't counted. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.

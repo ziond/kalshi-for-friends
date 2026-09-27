@@ -27,15 +27,9 @@ Status: **draft, authoritative for the backend** — the Go API implements what 
 | 15 | "Probability history" chart | Needs history. Add `market_price_snapshots(market_id, taken_at, probabilities JSONB)`, and write a row on market creation and after every position. Alternatively, rebuild the history from `positions` on read. Return the full history: the UI's 1H / 24H / ALL toggles filter it client-side using each point's `at` |
 | 16 | Payout grace period | Picking a winner doesn't pay out. It inserts the settlement with `payout_at = resolved_at + 5 minutes` (`PAYOUT_GRACE_MINUTES`, one backend setting) and sets status `PAYOUT_PENDING`; no coins move and positions stay `PENDING`. The pick is final: it can never be switched to another outcome, so until `payout_at` the moderator's only option is to nullify (refund everyone, final). A second pick for any option, including the same one, is rejected and changes nothing. At `payout_at` a scheduled job — or the next read, if the job is late — pays out, sets `paid_out_at` and status `RESOLVED`. Add `settlements.payout_at` and `settlements.paid_out_at`, and allow `PAYOUT_PENDING` in the `markets.status` check |
 | 17 | Points economy (MVP) | 1,000 points on signup (`INITIAL_BONUS`) and 1,000 more claimable every 24 hours (`DAILY_BONUS`); no other way to add points. Add `wallets.next_daily_bonus_at TIMESTAMPTZ NOT NULL` (set to `created_at + 24h` at signup, backfill existing wallets to `now()`), allow `DAILY_BONUS` in the transaction type check, and remove the deposit endpoint. Amount and interval are backend settings |
+| 18 | Invite link expiry | An invite code works for 15 minutes after the community is created or the code is regenerated (`communities.invite_expires_at`, migration 000011; existing codes got one 15-minute window at migration time). After that, `GET /invites/:code`, `GET /public/invites/:code` and `POST /communities/join` return `404 INVALID_INVITE_CODE` and nothing changes. Reads never extend the window; only `POST /communities/:id/invite-code` issues a fresh code with a new 15 minutes, and the old code stops working. Existing members and direct joins to public communities are unaffected. Both invite lookups send `Cache-Control: no-store` so no cache outlives the link. The API doesn't return the expiry time yet |
 
 ## 2. Conventions
-
-Community invite codes expire 15 minutes after creation or regeneration.
-Expired codes return `404 INVALID_INVITE_CODE` from public/authenticated previews
-and invite-based joins. Administrators generate a fresh code using
-`POST /communities/:id/invite-code`; reads never extend expiry. Existing members
-and direct joins to public communities are unaffected. Preview responses use
-`Cache-Control: no-store` so caches do not extend a link's effective validity.
 
 - Base path: `/api/v1`
 - JSON fields are camelCase.
@@ -148,7 +142,8 @@ interface CommunitySummary {
 
 interface CommunityDetail extends CommunitySummary {
   creator: UserSummary;
-  inviteCode: string | null;   // only returned to MODERATOR/ADMIN
+  inviteCode: string | null;   // only returned to MODERATOR/ADMIN. Valid for 15 minutes from creation or the
+                               // last regeneration (decision 18); may already have expired
 }
 
 interface InvitePreview {      // shown on /invite/:code before joining
@@ -335,13 +330,13 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | GET | `/communities` | any | — | `CommunitySummary[]` (mine) — Home "Your communities", the Groups page and the profile |
 | POST | `/communities` | any | `CreateCommunityRequest` | `CommunityDetail` — creator becomes ADMIN |
 | GET | `/communities/discover` | any | — | `CommunitySummary[]` — all PUBLIC communities, joined or not |
-| POST | `/communities/join` | any | `JoinCommunityRequest` | `CommunityDetail` — join via invite code |
-| GET | `/invites/:code` | any | — | `InvitePreview` |
-| GET | `/public/invites/:code` | **no sign-in** | — | `PublicInvite`, or `404 INVALID_INVITE_CODE`. Called server-side by the Next.js app (no cookies, no `Origin`) to build link previews and the signed-out invite page. Rate-limit per IP; may send `Cache-Control: public, max-age=300` |
+| POST | `/communities/join` | any | `JoinCommunityRequest` | `CommunityDetail` — join via invite code. `404 INVALID_INVITE_CODE` if the code is unknown, replaced or expired |
+| GET | `/invites/:code` | any | — | `InvitePreview`, or `404 INVALID_INVITE_CODE` if unknown, replaced or expired. `Cache-Control: no-store` |
+| GET | `/public/invites/:code` | **no sign-in** | — | `PublicInvite`, or `404 INVALID_INVITE_CODE`. Called server-side by the Next.js app (no cookies, no `Origin`) to build link previews and the signed-out invite page. Rate-limited per IP. Expired codes also return 404. Sends `Cache-Control: no-store` |
 | GET | `/communities/:id` | member, or anyone if PUBLIC | — | `CommunityDetail` |
 | POST | `/communities/:id/join` | any, PUBLIC only | — | `CommunityDetail` |
 | PATCH | `/communities/:id` | admin | `UpdateCommunityRequest` | `CommunityDetail` |
-| POST | `/communities/:id/invite-code` | admin | — | `{ inviteCode: string }` — issues a new code |
+| POST | `/communities/:id/invite-code` | admin | — | `{ inviteCode: string }` — issues a new code valid for 15 minutes; the old code stops working |
 | GET | `/communities/:id/members` | member | — | `CommunityMember[]` |
 | PATCH | `/communities/:id/members/:userId` | admin | `UpdateMemberRoleRequest` | `CommunityMember` |
 | DELETE | `/communities/:id/members/:userId` | admin, or self to leave | — | `204` |

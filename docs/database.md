@@ -1,8 +1,8 @@
 # MVP database schema and implementation handoff
 
-Status: ten migration pairs (000001–000010, listed in
-[migrations/README.md](../migrations/README.md)). All ten are applied to the shared
-Supabase development database as of 2026-09-27. The API implements the services
+Status: eleven migration pairs (000001–000011, listed in
+[migrations/README.md](../migrations/README.md)). The shared Supabase development
+database has all eleven applied as of 2026-09-27. The API implements the services
 described here; the canonical API is [api-contract.md](api-contract.md), and the
 original [frontend API draft](api.md) is kept for history. Sections below marked
 "ready for Zion" or "to confirm" are from the original handoff.
@@ -17,7 +17,7 @@ numbering so both engineers work from the same schema.
 | --- | --- | --- |
 | users | id, username, email, password_hash, avatar_url, prediction_score, total_predictions, correct_predictions | Zion: auth and profiles; Owen: prediction stats |
 | wallets | user_id PK, balance, next_daily_bonus_at, updated_at | Owen; registration must create one |
-| communities | id, name, description, invite_code, creator_id | Zion |
+| communities | id, name, description, visibility, invite_code, invite_expires_at, creator_id | Zion |
 | community_members | PK (community_id, user_id), role, joined_at | Zion |
 | markets | id, community_id, creator_id, moderator_id, title, description, market_type, deadline, status (OPEN, LOCKED, PAYOUT_PENDING, RESOLVED, CANCELLED), cancellation audit | Owen |
 | market_options | id, market_id, option_text, sort_order, total_amount | Owen |
@@ -88,6 +88,13 @@ Create the community and its creator's ADMIN membership atomically. Generate a
 random invite code in the service; the unique constraint handles collisions.
 A user can have one current membership per community. Regeneration replaces
 invite_code, invalidating the old code. Return it only to permitted members.
+
+Invite codes expire (migration 000011): `invite_expires_at` defaults to
+`clock_timestamp() + 15 minutes` at creation and regeneration resets it the same
+way. Every lookup by code (`GET /invites/:code`, `GET /public/invites/:code`,
+`POST /communities/join`) requires `invite_expires_at > clock_timestamp()`, so
+an expired code behaves exactly like an unknown one. Reads never extend it.
+Existing codes got one 15-minute window when the migration ran.
 
 Community creation and membership operations must enforce authorization in the
 service; foreign keys do not prove membership or role. Preserve the last admin.

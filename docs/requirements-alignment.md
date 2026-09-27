@@ -2,7 +2,7 @@
 
 Source: repository `docs/api-contract.md` and `docs/requirements.md`, also supplied
 by Owen. This is implementation status, not a claim that full-stack acceptance
-has passed. The shared Supabase development database has migrations 000001–000010
+has passed. The shared Supabase development database has migrations 000001–000011
 applied (2026-09-27).
 
 ## Implemented in this change
@@ -13,7 +13,8 @@ applied (2026-09-27).
 | COM-01–07,10–13,19; DSC; INV | Explicit visibility, public discovery/join, moderator selection, private access checks, invite preview, code replacement | Existing integration suite updated; live verification pending |
 | WAL-07–09 | Atomic wallet/ledger updates, wallet and transaction reads | `lifecycle_test` |
 | AUTH-05; WAL-08,11,12; DATA-01,08; SEC-03 | Daily bonus: `POST /me/daily-bonus` credits `DAILY_BONUS_POINTS` (1,000) when `next_daily_bonus_at` has passed, in one conditional `UPDATE` plus a DAILY_BONUS ledger row; early claims get `409 DAILY_BONUS_NOT_READY` ("Your next 1,000 points are ready in 5h 12m"); missed days don't stack; first bonus opens `DAILY_BONUS_HOURS` (24) after signup; `nextDailyBonusAt` on `Me`; deposit endpoint and `DEPOSITS_ENABLED` removed (WAL-03–05,10 withdrawn); migration 000010 | `daily_bonus_test` (incl. 8 parallel claims → one credit), `points_test`, `config_test`; migration 000010 up/down/up verified on PostgreSQL 18 (2026-09-27) |
-| INV-06,07; SEC-10 | Public invite lookup `GET /public/invites/:code`: no sign-in, returns only name, visibility and member count, `404 INVALID_INVITE_CODE`, `Cache-Control: public, max-age=300`, 120 requests/min per IP | `router_test` (`TestCommunityLifecycle`), `rate_limit_test`; checked live against the shared database |
+| INV-04,07,09; COM-06,17 | Invite links expire 15 minutes after creation or regeneration (`communities.invite_expires_at`, migration 000011): expired codes get `404 INVALID_INVITE_CODE` from both invite lookups and from joining, reads never extend the window, and regeneration starts a new one. Invite lookups send `Cache-Control: no-store` (replacing the public lookup's 5-minute cache). The UI can't issue a new code yet (requirements open issue 23) | `invite_expiry_test`; migrations 000010–000011 up/down/up verified on PostgreSQL 18 (2026-09-27) |
+| INV-06,07; SEC-10 | Public invite lookup `GET /public/invites/:code`: no sign-in, returns only name, visibility and member count, `404 INVALID_INVITE_CODE`, 120 requests/min per IP | `router_test` (`TestCommunityLifecycle`), `rate_limit_test`; checked live against the shared database |
 | MKT; ODD; FEED | Member-only creation, validated options/deadlines, public/private feeds, server search, probabilities and immutable-position-derived history | Integration test added |
 | BET; ACT; USR-03–04 | Member-only bets; market/wallet locks; no option switching; balance/pool/ledger atomicity; paginated activity and positions | Lifecycle and concurrent-bet tests added |
 | LCK; RES; DATA-01–05 | Computed deadline locking, moderator checks, locked-only settlement, sorted wallet locks, one settlement, exact payouts/refunds | Exact arithmetic unit tests pass; database race tests added |
@@ -41,6 +42,10 @@ applied (2026-09-27).
   remains stateless; no session cookie is introduced. Reuse rejects the old token
   but does not revoke its entire descendant family. Expired hashes may be purged
   by an owner-run maintenance query. Never store raw refresh tokens.
+- JWT keys can come entirely from environment variables (for hosts without key
+  files, e.g. Vercel): `JWT_PRIVATE_KEY` as a PEM, with literal `\n`, or
+  base64-encoded; without `JWT_PUBLIC_KEY` or a public key file the public key is
+  derived from it. Covered by `config_test` (`TestAUTH15KeysFromEnvironmentOnly`).
 - SEC-01 also protects /api/v1/health now; unauthenticated health probes get 401.
 - Operational errors still use INTERNAL_ERROR / DATABASE_UNAVAILABLE (500/503).
   These need documenting as contract extensions; hiding infrastructure failures
@@ -78,8 +83,12 @@ temporary cluster. On Windows, start a throwaway cluster with the PostgreSQL
 `TEST_DATABASE_URL=… go test -p 1 ./...`, then `psql -f tests/schema.sql`. The
 Go suite and the schema fixture passed this way on PostgreSQL 18 on 2026-09-27.
 
-The shared Supabase database is at migration 000010. Apply new migrations there
-before restarting an API that expects them. The API connects as the Supabase
+The shared Supabase database is at migration 000011 (2026-09-27), and the API
+built from `backend-dev` was checked against it (read-only requests: `/me`, wallet,
+communities, markets, both invite lookups). Apply new migrations there before
+restarting an API that expects them. The invite-expiry migration was first
+committed as a second 000010 alongside the daily bonus; golang-migrate rejects
+duplicate versions, so it was renumbered to 000011. The API connects as the Supabase
 `postgres` role, which owns the tables, so no extra grants are needed; with a
 separate `kalshi_app` role it needs `GRANT SELECT, INSERT, DELETE ON refresh_tokens`
 and `GRANT UPDATE, DELETE ON settlements`. Migrations 000007 and 000010 refuse
