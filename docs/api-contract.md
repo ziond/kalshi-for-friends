@@ -2,7 +2,7 @@
 
 Contract between the Go backend and the Next.js frontend. Go structs should mirror the TypeScript types below exactly (same field names via `json:"camelCase"` tags).
 
-Status: **draft** — built from the database schema and updated for the "called it." screens (see [requirements.md](requirements.md)).
+Status: **draft, authoritative for the backend** — the Go API implements what this document says. When the frontend needs a behaviour change, this document is updated in the same change (see [requirements.md](requirements.md)).
 
 ---
 
@@ -17,14 +17,15 @@ Status: **draft** — built from the database schema and updated for the "called
 | 5 | Payout model | Parimutuel pool: `payout = floor(stake × totalPool / winningOptionPool)`. Rounding remainder goes to the largest winner. Displayed odds = `option.total_amount / market pool`. The stake confirmation in the UI estimates a return with the same formula, adding the new stake to the pool and option first |
 | 6 | `LOSS` transaction | Coins already left at `PLACE_POSITION`. Log `LOSS` with `amount = 0` for history only (or drop the type) so the ledger doesn't double-count |
 | 7 | `transactions.reference_id` is ambiguous | Add `reference_type` (`POSITION` / `MARKET`) and `balance_after` |
-| 8 | Who sets `LOCKED`? | A market is locked when `now > deadline` — computed on read or set by a scheduled job, never manual |
-| 9 | `CANCELLED` markets | Refund every position with `REFUND` transactions. No settlement row |
+| 8 | Who sets `LOCKED`? | A market is locked when `now > deadline` — computed on read or set by a scheduled job, never manual. The same job pays out `PAYOUT_PENDING` markets whose `payout_at` has passed (see row 16) |
+| 9 | `CANCELLED` markets | Refund every position with `REFUND` transactions. No settlement row (delete the pending one if the market was nullified during its grace period). Final: a cancelled market never changes again |
 | 10 | Wallets are global, leaderboards are per community | Community leaderboards are computed from positions + settlements within that community (see `LeaderboardEntry`). `users.prediction_score` stays global. The UI ranks leaderboards by win rate (`correctPredictions / totalPredictions`) itself, so the API's order doesn't matter |
 | 11 | `BINARY` options | Backend auto-creates `YES` / `NO`; the client never sends them |
 | 12 | Public vs private communities (from the original design) | Add `communities.visibility VARCHAR(10) NOT NULL` (`PUBLIC` / `PRIVATE`). Public ones appear in Discover and can be joined directly; private ones need an invite code |
 | 13 | Who moderates a market | **Public** community: the community's `MODERATOR`s (chosen at creation) resolve all its markets, and `moderatorId` is ignored. **Private** community: the creator picks any member as `markets.moderator_id` per market |
-| 14 | When moderators act | The design only lets the moderator resolve or nullify once the market is `LOCKED` (past its deadline). "Nullify" = cancel + refund |
+| 14 | When moderators act | The moderator can pick a winner only once the market is `LOCKED` (past its deadline), and can nullify while it's `LOCKED` or `PAYOUT_PENDING`. "Nullify" = cancel + refund, immediate and final |
 | 15 | "Probability history" chart | Needs history. Add `market_price_snapshots(market_id, taken_at, probabilities JSONB)`, and write a row on market creation and after every position. Alternatively, rebuild the history from `positions` on read. Return the full history: the UI's 1H / 24H / ALL toggles filter it client-side using each point's `at` |
+| 16 | Payout grace period | Picking a winner doesn't pay out. It inserts the settlement with `payout_at = resolved_at + 5 minutes` (`PAYOUT_GRACE_MINUTES`, one backend setting) and sets status `PAYOUT_PENDING`; no coins move and positions stay `PENDING`. The pick is final: it can never be switched to another outcome, so until `payout_at` the moderator's only option is to nullify (refund everyone, final). A second pick for any option, including the same one, is rejected and changes nothing. At `payout_at` a scheduled job — or the next read, if the job is late — pays out, sets `paid_out_at` and status `RESOLVED`. Add `settlements.payout_at` and `settlements.paid_out_at`, and allow `PAYOUT_PENDING` in the `markets.status` check |
 
 ## 2. Conventions
 
@@ -45,11 +46,12 @@ Status: **draft** — built from the database schema and updated for the "called
 
 There's no push channel in the MVP. A market page stays current by polling:
 
-- **What's polled:** `GET /markets/:id` and `GET /markets/:id/activity`, every **5 seconds**, only while the page is open and visible and the market is `OPEN` or `LOCKED`. Polling stops once the market is `RESOLVED` or `CANCELLED`.
+- **What's polled:** `GET /markets/:id` and `GET /markets/:id/activity`, every **5 seconds**, only while the page is open and visible and the market is `OPEN`, `LOCKED` or `PAYOUT_PENDING`. Polling stops once the market is `RESOLVED` or `CANCELLED`. The Mod queue page also polls `GET /me/mod-queue` every 5 seconds while `payoutPending` isn't empty.
+- **Countdowns:** during a grace period the UI counts down to `settlement.payoutAt` (or `MarketSummary.payoutAt`) on its own and re-fetches the moment it reaches zero, so the payout must be visible to reads made at or just after `payoutAt` (see schema decision 16).
 - **Load:** about 2 requests per viewer every 5 seconds (≈ 40 requests/second for 100 viewers). Both endpoints should stay cheap: no per-request recomputation that grows with total bets beyond what's needed for the response.
-- **No caching:** both endpoints must send `Cache-Control: no-store`, so no browser or proxy serves stale odds.
+- **No caching:** these endpoints must send `Cache-Control: no-store`, so no browser or proxy serves stale odds or statuses.
 - **Rate limits:** if the API rate-limits, allow at least 1 request per 5 seconds per endpoint per user (and a burst when a tab regains focus).
-- **Settlement:** when a poll returns a market that has moved from `OPEN`/`LOCKED` to `RESOLVED`/`CANCELLED`, the frontend refetches `GET /me`, the user's positions, the feeds and that community's leaderboard. `MarketDetail.status`, `settlement` and `myStake` must therefore be up to date on every read.
+- **Settlement:** when a poll returns a market that has moved from `OPEN`/`LOCKED`/`PAYOUT_PENDING` to `RESOLVED`/`CANCELLED`, the frontend refetches `GET /me`, the user's positions, the feeds and that community's leaderboard. `MarketDetail.status`, `settlement` and `myStake` must therefore be up to date on every read.
 - **Later:** replace polling with Server-Sent Events or WebSockets, or support `ETag` / `If-None-Match` → `304 Not Modified` to make unchanged polls cheap. Either is backwards-compatible with this contract.
 
 ### Authentication
@@ -85,7 +87,9 @@ type ISODate = string;
 type Role = 'MEMBER' | 'MODERATOR' | 'ADMIN';
 type Visibility = 'PUBLIC' | 'PRIVATE';
 type MarketType = 'BINARY' | 'MULTIPLE_CHOICE';
-type MarketStatus = 'OPEN' | 'LOCKED' | 'RESOLVED' | 'CANCELLED';
+type MarketStatus = 'OPEN' | 'LOCKED' | 'PAYOUT_PENDING' | 'RESOLVED' | 'CANCELLED';
+// OPEN → LOCKED (deadline) → PAYOUT_PENDING (winner picked, grace period) → RESOLVED (paid out)
+// LOCKED | PAYOUT_PENDING → CANCELLED (nullified, refunded, final)
 type TransactionType = 'INITIAL_BONUS' | 'DEPOSIT' | 'PLACE_POSITION' | 'WIN_REWARD' | 'LOSS' | 'REFUND';
 type PositionResult = 'PENDING' | 'WON' | 'LOST' | 'REFUNDED';
 
@@ -152,7 +156,7 @@ interface MarketOption {
   totalAmount: number;
   positionCount: number;
   probability: number;         // totalAmount / market pool, 0–1 (even split if pool = 0)
-  isWinner: boolean | null;    // null until resolved
+  isWinner: boolean | null;    // null until RESOLVED (still null during PAYOUT_PENDING; see settlement.winningOptionId)
 }
 
 interface MyStake { optionId: ID; amount: number; potentialPayout: number; }  // after RESOLVED, potentialPayout is the actual payout; the "You literally called it." card shows potentialPayout - amount
@@ -172,12 +176,15 @@ interface MarketSummary {
   creator: UserSummary;
   moderator: UserSummary;
   myStake: MyStake | null;     // null if the current user hasn't bet
+  payoutAt: ISODate | null;    // settlement.payoutAt once a winner is picked, else null (Mod queue countdowns)
 }
 
-interface Settlement {
+interface Settlement {         // exists from the moment a winner is picked; removed if the market is nullified
   winningOptionId: ID;
   resolvedBy: UserSummary;
-  resolvedAt: ISODate;
+  resolvedAt: ISODate;         // when the moderator picked the winner
+  payoutAt: ISODate;           // resolvedAt + PAYOUT_GRACE_MINUTES (5)
+  paidOutAt: ISODate | null;   // null during the grace period (PAYOUT_PENDING)
   notes: string | null;
 }
 
@@ -193,10 +200,12 @@ interface MarketDetail extends MarketSummary {
   createdAt: ISODate;
   updatedAt: ISODate;
   permissions: { canBet: boolean; canResolve: boolean; canCancel: boolean };
+  // canResolve: moderator && LOCKED. canCancel: moderator && (LOCKED || PAYOUT_PENDING).
 }
 
 interface ModQueue {           // markets the current user moderates; the two Mod queue tabs
-  pending: MarketSummary[];    // LOCKED, waiting for resolve/nullify
+  pending: MarketSummary[];    // LOCKED, waiting for a pick or nullify (counted in the nav badge)
+  payoutPending: MarketSummary[]; // PAYOUT_PENDING, in the grace period; can still be nullified
   active: MarketSummary[];     // still OPEN
 }
 
@@ -293,7 +302,7 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | GET | `/me/wallet` | — | `Wallet` |
 | POST | `/me/wallet/deposit` | `DepositRequest` | `Wallet` — MVP only: adds free points to the caller's own wallet and writes a `DEPOSIT` transaction. Remove or gate it before real money |
 | GET | `/me/transactions?cursor=` | — | `Paginated<Transaction>` |
-| GET | `/me/mod-queue` | — | `ModQueue` |
+| GET | `/me/mod-queue` | — | `ModQueue` — polled every 5 s while `payoutPending` isn't empty; `Cache-Control: no-store` |
 | GET | `/users/:id` | — | `UserProfile` |
 
 ### Communities
@@ -324,8 +333,8 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | GET | `/markets/:id` | member | — | `MarketDetail` — polled every 5 s while `OPEN`/`LOCKED` (see [Live updates](#live-updates-mvp-polling)); `Cache-Control: no-store` |
 | GET | `/markets/:id/activity?cursor=` | member | — | `Paginated<MarketActivity>` — newest first; polled with `/markets/:id`; `Cache-Control: no-store` |
 | POST | `/markets/:id/positions` | member, while OPEN | `PlacePositionRequest` | `{ position: Position; market: MarketDetail; balance: number }` |
-| POST | `/markets/:id/resolve` | market moderator, while LOCKED | `ResolveMarketRequest` | `MarketDetail` |
-| POST | `/markets/:id/cancel` | market moderator, while LOCKED ("Nullify") | `CancelMarketRequest` | `MarketDetail` |
+| POST | `/markets/:id/resolve` | market moderator, while LOCKED | `ResolveMarketRequest` | `MarketDetail` with status `PAYOUT_PENDING` — picks the winner (final) and starts the 5-minute grace period; no coins move. While `PAYOUT_PENDING`: `409 MARKET_CLOSED` "A winner has already been picked. You can only nullify this market" for any option. Other statuses: `409 MARKET_CLOSED` |
+| POST | `/markets/:id/cancel` | market moderator, while LOCKED or PAYOUT_PENDING ("Nullify") | `CancelMarketRequest` | `MarketDetail` with status `CANCELLED` — refunds every bet immediately; final. `409 MARKET_CLOSED` once paid out |
 
 `POST /markets/:id/positions` returns the updated market and new balance so the UI can refresh odds and the wallet without a second fetch.
 
@@ -346,16 +355,23 @@ Each of these must run inside a single database transaction.
 5. Increment `market_options.total_amount`.
 6. Insert a `PLACE_POSITION` transaction.
 
-**Resolve a market**
-1. Check status is `OPEN` or `LOCKED`.
-2. Insert the settlement row; set market status to `RESOLVED`.
-3. Pay each winner using the payout formula; log `WIN_REWARD`.
-4. Update `correct_predictions`, `total_predictions`, and `prediction_score` for every participant.
-5. If nobody picked the winning option, refund everyone instead.
+**Pick a winner** (`POST /markets/:id/resolve`)
+1. Lock the market row (`SELECT … FOR UPDATE`); check the caller is its moderator and status is `LOCKED`. If it's `PAYOUT_PENDING`, reject with `MARKET_CLOSED` "A winner has already been picked. You can only nullify this market" and change nothing — the pick is final.
+2. Insert the settlement row with `resolved_at = now`, `payout_at = now + PAYOUT_GRACE_MINUTES`, `paid_out_at = NULL`.
+3. Set market status to `PAYOUT_PENDING`. No coins move; positions stay `PENDING`.
 
-**Cancel a market**
-1. Set market status to `CANCELLED`.
-2. Refund every position with a `REFUND` transaction.
+**Pay out** (scheduled job at `payout_at`, or on the next read if the job is late — must be idempotent)
+1. Lock the market row; continue only if status is still `PAYOUT_PENDING` and `now ≥ payout_at`.
+2. Pay each winner using the payout formula; log `WIN_REWARD`. Mark positions `WON` / `LOST`.
+3. If nobody picked the winning option, refund everyone instead (`REFUND`, positions `REFUNDED`).
+4. Update `correct_predictions`, `total_predictions`, and `prediction_score` for every participant.
+5. Set `paid_out_at = now` and market status to `RESOLVED`.
+
+**Cancel a market** (`POST /markets/:id/cancel`, "Nullify")
+1. Lock the market row; check the caller is its moderator and status is `LOCKED` or `PAYOUT_PENDING`.
+2. Delete the pending settlement row, if any.
+3. Refund every position with a `REFUND` transaction; mark positions `REFUNDED`.
+4. Set market status to `CANCELLED`. Because the payout also locks the row and re-checks the status, a nullify and a payout can never both happen.
 
 ## 7. Error codes
 
@@ -370,3 +386,5 @@ Each of these must run inside a single database transaction.
 | `ALREADY_MEMBER` | 409 |
 | `INVALID_INVITE_CODE` | 404 |
 | `OPTION_SWITCH_NOT_ALLOWED` | 409 |
+
+`MARKET_CLOSED` covers every action the market's status doesn't allow: betting after the deadline, picking a winner when one is already picked (message: "A winner has already been picked. You can only nullify this market") or the market is settled, and nullifying after the payout.

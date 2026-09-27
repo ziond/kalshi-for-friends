@@ -97,11 +97,12 @@ The **Test** column names the automated test that covers the requirement (paths 
 | **Pool** | The total points bet across all options of a market (shown as "N pts staked" on cards and "Volume" in market info). |
 | **Probability** | An option's share of the pool, shown as a percentage. |
 | **Moderator** | The user who decides a market's real-world outcome. |
-| **Resolve / validate** | Declare the winning option and pay out. |
-| **Nullify / cancel** | Void a market and refund every bet. |
+| **Resolve / validate** | The moderator picks the winning option. Payouts follow automatically when the grace period ends. |
+| **Grace period** | The 5 minutes between the moderator picking a winner and the payout (status `PAYOUT_PENDING`). The pick is final; the only thing the moderator can still do is nullify. Points don't move until it ends. |
+| **Nullify / cancel** | Void a market and refund every bet. Allowed before a winner is picked or during the grace period; always final. |
 | **Deadline / closes** | The time after which no more bets are accepted. |
 | **Win rate** | Share of a member's settled predictions (won or lost, not refunded) in a community that were correct. Ranks the community leaderboard. |
-| **Live market** | A market that can still change: OPEN (taking bets) or LOCKED (waiting for the moderator). Its page polls for updates. |
+| **Live market** | A market that can still change: OPEN (taking bets), LOCKED (waiting for the moderator) or PAYOUT_PENDING (in its grace period). Its page polls for updates. |
 | **Groups** | The app's name for the list of communities you belong to (`/communities`). |
 | **Role** | A user's rank in a community: `ADMIN` (the creator, shown as "Creator"), `MODERATOR` or `MEMBER`. |
 
@@ -160,7 +161,7 @@ The **Test** column names the automated test that covers the requirement (paths 
 | USR-01 | The profile page shows who the user is. | Shows avatar initial, username, "Member since <Mon YYYY>" and four stat tiles: Balance, Accuracy, Called it (correct/total) and Score. | Must | Built (mock) | `account.test` |
 | USR-02 | The profile lists the user's communities with their role. | Each community the user belongs to is listed (privacy · member count) and links to it. Role shows as "Creator", "Moderator" or "Member". | Must | Built (mock) | `account.test` |
 | USR-03 | The profile lists open positions. | Every bet on a market that is still OPEN is listed with the market title, option and amount, linking to the market. Shows "No open bets." when empty. | Must | Built (mock) | `account.test` |
-| USR-04 | The profile lists bet history. | Every bet on a closed, resolved or nullified market is listed with its result: "Awaiting resolution", "Won +N pts", "Lost N pts" or "Refunded". Shows "No settled bets yet." when empty. | Must | Built (mock) | `account.test` |
+| USR-04 | The profile lists bet history. | Every bet on a closed, resolved or nullified market is listed with its result: "Awaiting resolution", "Payout pending" (grace period), "Won +N pts", "Lost N pts" or "Refunded". Shows "No settled bets yet." when empty. | Must | Built (mock) | `account.test` |
 | USR-05 | The profile shows prediction accuracy once the user has settled bets. | After at least one won or lost bet, the Accuracy tile shows "N%" (correct ÷ total settled); before that it shows "—". Refunds don't count. | Should | Built (mock) | Manual |
 | USR-06 | The nav avatar opens the profile. | Clicking the round avatar in the top nav goes to `/profile`. | Must | Built (mock) | Manual |
 | USR-07 | A user can change their username or avatar. | `PATCH /me` updates them; the new name appears everywhere after refresh. | Could | Not built — API only, no UI | — |
@@ -256,7 +257,7 @@ The **Test** column names the automated test that covers the requirement (paths 
 | ODD-05 | Volume is the total pool. | Cards show "N pts staked" and the info panel shows "Volume", abbreviated above 1,000 (e.g. "3.2k pts"). | Must | Built (mock) | `format.test`, `card.test` |
 | ODD-06 | Users see what they'd win. | The info panel shows the user's stake and "If it wins" payout at current odds. | Should | Built (mock) | Manual |
 | ODD-07 | The chart can be narrowed to recent activity. | 1H / 24H / ALL toggles (default ALL) limit the chart to that period, starting from the last value before it; the left axis label shows the period ("1h ago", "24h ago"). The API returns full history; filtering is done in the UI. | Could | Built (mock) | `market.test` |
-| ODD-08 | An open market page updates itself. | While a market page is open and the market is OPEN or LOCKED, it re-fetches the market (odds, chart, pool, participants, status) and its activity every 5 seconds, without a reload and without losing the selected outcome or the stake being typed. Polling pauses while the browser tab is hidden, refreshes as soon as it's visible again, and stops once the market is RESOLVED or CANCELLED. | Must | Built (mock) | `live.test` |
+| ODD-08 | An open market page updates itself. | While a market page is open and the market is OPEN, LOCKED or PAYOUT_PENDING, it re-fetches the market (odds, chart, pool, participants, status) and its activity every 5 seconds, without a reload and without losing the selected outcome or the stake being typed. Polling pauses while the browser tab is hidden, refreshes as soon as it's visible again, and stops once the market is RESOLVED or CANCELLED. | Must | Built (mock) | `live.test` |
 
 ### 3.9 Placing bets (BET)
 
@@ -282,9 +283,9 @@ The **Test** column names the automated test that covers the requirement (paths 
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| LCK-01 | Markets move through OPEN → LOCKED → RESOLVED or CANCELLED. | No other transitions are possible (e.g. a RESOLVED market can't reopen or be resolved again). | Must | Built (mock) | Manual |
+| LCK-01 | Markets move through OPEN → LOCKED → PAYOUT_PENDING → RESOLVED, or to CANCELLED from LOCKED or PAYOUT_PENDING. | No other transitions are possible: a RESOLVED or CANCELLED market never changes again, and a PAYOUT_PENDING market can't get a different winner. | Must | Built (mock) | `api.test` |
 | LCK-02 | A market locks automatically at its deadline. | Once the deadline passes, the market is LOCKED on the next read without anyone acting, and betting stops. | Must | Built (mock) | `api.test` |
-| LCK-03 | Time left is shown in plain language. | "3d left", "18h left", "Ends 8pm" (later today), "Ended", "Resolved" or "Nullified". | Must | Built (mock) | `format.test`, `card.test` |
+| LCK-03 | Time left is shown in plain language. | "3d left", "18h left", "Ends 8pm" (later today), "Ended", "Paying out", "Resolved" or "Nullified". | Must | Built (mock) | `format.test`, `card.test` |
 | LCK-04 | Deadlines can't be changed after creation. | There's no way to edit a market's deadline, question or options once it exists. | Should | Built (mock) | — |
 
 ### 3.11 Resolution, nullification and payouts (RES)
@@ -292,28 +293,33 @@ The **Test** column names the automated test that covers the requirement (paths 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
 | RES-01 | Only the market's moderator can resolve or nullify it. | Anyone else gets 403 `FORBIDDEN` and sees no moderator panel. | Must | Built (mock) | `api.test` |
-| RES-02 | Resolution happens only after the market closes. | The moderator panel appears only on LOCKED markets; resolving or nullifying an OPEN market is rejected. | Must | Built (mock) | `market.test` |
-| RES-03 | The moderator sees a panel to decide the outcome. | On an ended market they moderate, the page shows "This market has ended — you're the moderator", one "Validate: <option>" button per option, and "Nullify market". | Must | Built (mock) | `market.test` |
-| RES-04 | Resolving and nullifying ask for confirmation. | Both actions show a confirmation dialog; cancelling it does nothing. | Must | Built (mock) | `market.test` |
-| RES-05 | Resolving pays winners from the whole pool. | Each winning bet receives floor(stake × pool ÷ winning option total). Losing bets receive nothing. Payouts are credited immediately. | Must | Built (mock) | `api.test` |
+| RES-02 | Resolution happens only after the market closes. | The moderator panel appears only on LOCKED markets (pick a winner or nullify) and PAYOUT_PENDING markets (nullify only). Picking a winner on any other status, or nullifying an OPEN, RESOLVED or CANCELLED market, is rejected with `MARKET_CLOSED`. | Must | Built (mock) | `api.test`, `market.test` |
+| RES-03 | The moderator sees a panel to decide the outcome. | On an ended market they moderate, the page shows "This market has ended — you're the moderator", explains the 5-minute grace period, and offers one "Validate: <option>" button per option and "Nullify market". | Must | Built (mock) | `market.test` |
+| RES-04 | Resolving and nullifying ask for confirmation. | Picking a winner confirms "Pick "<option>" as the winner? You can't switch to another outcome afterwards. Payouts go out in 5 minutes; until then you can only nullify the market." Nullifying confirms "Nullify this market and refund every bet? This can't be undone." Cancelling either dialog does nothing. | Must | Built (mock) | `market.test` |
+| RES-05 | Payouts pay winners from the whole pool when the grace period ends. | At `payoutAt` each winning bet receives floor(stake × pool ÷ winning option total) and losing bets receive nothing, all at once. Nothing is paid before then. | Must | Built (mock) | `api.test` |
 | RES-06 | Rounding leftovers aren't lost. | Points left over from rounding down go to the largest winning bet, so total paid out equals the pool. | Should | Not built — mock drops the remainder | — |
-| RES-07 | If nobody backed the winning option, everyone is refunded. | Resolving to an option with no bets refunds every bet in full. | Must | Built (mock) | Manual |
-| RES-08 | Nullifying refunds every bet in full. | After nullifying, every bettor gets back exactly what they bet and the market shows "This market was nullified — all bets refunded." | Must | Built (mock) | `api.test`, `market.test` |
-| RES-09 | Settled markets show the outcome. | A resolved market shows a green banner "Resolved: <option> — payouts settled." and a ✓ next to the winning outcome. A nullified market shows "This market was nullified — all bets refunded." Cards show "Resolved: <option>" or "Nullified · refunded". | Must | Built (mock) | `market.test`, `card.test` |
-| RES-10 | A market can only be settled once. | Resolving or nullifying an already settled market is rejected; nobody is paid twice. | Must | Built (mock) | Manual |
+| RES-07 | If nobody backed the winning option, everyone is refunded. | When the grace period ends on a winner with no bets, every bet is refunded in full instead of paid out. | Must | Built (mock) | Manual |
+| RES-08 | Nullifying refunds every bet in full, and is final. | The moderator can nullify a LOCKED market or a PAYOUT_PENDING one (before the payout). Every bettor gets back exactly what they bet straight away, the market shows "This market was nullified — all bets refunded.", and it can never be resolved or reopened. | Must | Built (mock) | `api.test`, `market.test`, `account.test` |
+| RES-09 | Markets show where they are in settlement. | During the grace period the status pill reads "Paying out", the picked outcome is tagged "Picked as winner · payout pending", and cards show "Winner picked · paying out soon". Once paid out the page shows a green banner "Resolved: <option> — payouts settled." and a ✓ on the winner; a nullified market shows "This market was nullified — all bets refunded." Cards show "Resolved: <option>" or "Nullified · refunded". | Must | Built (mock) | `market.test`, `card.test` |
+| RES-10 | A market can only be settled once. | Nullifying after the payout is rejected; resolving a nullified or paid-out market is rejected (`MARKET_CLOSED`). Nobody is paid twice. See RES-19 for picks during the grace period. | Must | Built (mock) | `api.test` |
 | RES-11 | Settlement is recorded. | Resolving stores the winning option, who resolved it, when, and optional notes. | Must | Backend only | Manual |
 | RES-12 | Bet results are recorded per position. | Each position ends as WON, LOST or REFUNDED with its payout, visible in the user's bet history. | Must | Built (mock) | `api.test`, `account.test` |
-| RES-14 | Users see their own result on a resolved market. | If the user backed the winner, a lime "You literally called it." card shows the question, their prediction, "+N points" (payout minus stake) and a WINNER tag. If they backed another option, a "Not this time." card shows what they staked. RES-13 is reserved for the open question in §5. | Should | Built (mock) | `market.test` |
-| RES-15 | A settlement made elsewhere shows up live. | If a market is resolved or nullified while someone has its page open (e.g. by the moderator on another device), within about 5 seconds the page shows the outcome banner, hides the moderator panel and stake panel, and refreshes the viewer's balance, bet history, feeds and the community leaderboard. | Should | Built (mock) | `live.test` |
+| RES-14 | Users see their own result on a resolved market. | After the payout (not during the grace period), if the user backed the winner a lime "You literally called it." card shows the question, their prediction, "+N points" (payout minus stake) and a WINNER tag. If they backed another option, a "Not this time." card shows what they staked. RES-13 is reserved for the open question in §5. | Should | Built (mock) | `market.test` |
+| RES-15 | Settlement changes made elsewhere show up live. | While a market page is open, a winner being picked, the payout, or a nullify (e.g. by the moderator on another device) shows up within about 5 seconds. When the market is paid out or nullified the viewer's balance, bet history, feeds and the community leaderboard refresh. | Should | Built (mock) | `live.test` |
+| RES-16 | Picking a winner starts a 5-minute grace period. | Validating an option moves the market to PAYOUT_PENDING and records `resolvedAt` and `payoutAt` (= `resolvedAt` + 5 minutes). No points move and no bet results change until then. Everyone sees the pick and a live m:ss countdown to the payout; the moderator's panel shows "You picked <option> — payouts go out in m:ss", says the pick can't be changed, and offers only "Nullify market". | Must | Built (mock) | `api.test`, `market.test` |
+| RES-17 | The payout happens on time without anyone watching. | At `payoutAt` the backend pays out and marks the market RESOLVED even if nobody has it open (scheduled job; also applied on read if the job is late). Users' balances and histories reflect it on their next request. When a viewer's countdown reaches 0:00 the page shows "Paying out now…" and fetches the result. | Must | Built (mock) | `api.test`, `live.test` |
+| RES-18 | Nullifying during the grace period cancels the payout for good. | After a nullify in the grace period, the original `payoutAt` passing has no effect: no payouts, and every bet stays refunded. | Must | Built (mock) | `api.test` |
+| RES-19 | A moderator's pick is final. | Once a winner is picked it can never be switched to another outcome. During the grace period the moderator's only option is to nullify: the market page and Mod queue show no outcome buttons, and `POST /markets/:id/resolve` for any option (including the same one) returns `409 MARKET_CLOSED` "A winner has already been picked. You can only nullify this market", leaving the pick and `payoutAt` unchanged. | Must | Built (mock) | `api.test`, `market.test`, `account.test` |
 
 ### 3.12 Mod Queue (MOD)
 
 | ID | Requirement | Acceptance criteria | Pri | Status | Test |
 |---|---|---|---|---|---|
-| MOD-01 | Moderators have one place to see their markets. | `/mod-queue` ("Your markets. Your call.") has two tabs: "Needs resolution" (ended markets they moderate) and "Active markets" (open ones), each showing its count. | Must | Built (mock) | `api.test`, `account.test` |
-| MOD-02 | Moderators can resolve straight from the queue. | Each pending market shows its community, points at stake, one "Pick the winning outcome" button per option and "Nullify"; acting removes it from the list. | Must | Built (mock) | `account.test` |
-| MOD-03 | The nav shows how many markets need a decision. | The Mod queue tab (and the shield icon on phones, labelled "Moderator queue, N pending") shows a red badge with the pending count, hidden when zero. It updates after resolving. | Must | Built (mock) | `nav.test` |
+| MOD-01 | Moderators have one place to see their markets. | `/mod-queue` ("Your markets. Your call.") has two tabs: "Needs resolution" (ended markets they moderate, plus a "Paying out soon" group for markets in their grace period) and "Active markets" (open ones), each showing its count. | Must | Built (mock) | `api.test`, `account.test` |
+| MOD-02 | Moderators can resolve straight from the queue. | Each ended market shows its community, points at stake, one "Pick the winning outcome" button per option and "Nullify". Picking moves it to "Paying out soon", which shows a "Payout in m:ss" countdown and "Nullify" until the payout; nullifying or the payout removes it from the list. | Must | Built (mock) | `account.test` |
+| MOD-03 | The nav shows how many markets need a decision. | The Mod queue tab (and the shield icon on phones, labelled "Moderator queue, N pending") shows a red badge with the number of LOCKED markets waiting for a pick, hidden when zero. Markets in their grace period don't count. It updates after acting. | Must | Built (mock) | `nav.test` |
 | MOD-04 | Empty states are friendly. | No pending markets shows "All caught up.", "No predictions need your decision right now. Enjoy the peace while it lasts." and "Back to your communities →" (to Groups). No active ones shows "Nothing live." | Should | Built (mock) | `account.test` |
+| MOD-05 | The queue stays current during grace periods. | While any market is in "Paying out soon", the queue re-fetches every 5 seconds and as soon as a countdown ends, so paid-out or nullified markets drop off without a reload. | Should | Built (mock) | Manual |
 
 ### 3.13 Home feed and search (FEED)
 
@@ -425,6 +431,7 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | DATA-04 | Pool totals always match the positions. | For every market, each option's total equals the sum of its positions, and the pool equals the sum of all positions. | Must | Backend only | Manual |
 | DATA-05 | Points are conserved. | After settlement, total paid out equals the pool (resolved) or total staked (nullified). No points are created or destroyed except by deposits and sign-up bonuses. | Must | Partial — see RES-06 | Manual |
 | DATA-06 | Uniqueness is enforced in the database. | Unique constraints on username, email, (community, user) membership, one wallet per user and invite codes. | Must | Backend only | Manual |
+| DATA-07 | A payout and a nullify can't both happen. | If a nullify arrives as the grace period ends, exactly one wins: either everyone is refunded and the market is CANCELLED, or winners are paid and the market is RESOLVED (the nullify then gets `MARKET_CLOSED`). The market row is locked during both. | Must | Backend only | Manual |
 
 ### 4.4 Performance (PERF)
 
@@ -460,7 +467,9 @@ What each actor may do. ✓ = allowed, ✗ = must be refused by the API (403) an
 | See / share the invite code | ✗ | ✗ | ✗ (unless MODERATOR) | ✓ | — |
 | Create a market in the community | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Bet on an OPEN market | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Resolve or nullify a LOCKED market | ✗ | ✗ | ✗ | ✗ (unless they're its moderator) | ✓ |
+| Pick a winner on a LOCKED market | ✗ | ✗ | ✗ | ✗ (unless they're its moderator) | ✓ |
+| Nullify a LOCKED or PAYOUT_PENDING market | ✗ | ✗ | ✗ | ✗ (unless they're its moderator) | ✓ |
+| Switch the picked winner (ever), or nullify after the payout | ✗ | ✗ | ✗ | ✗ | ✗ |
 | View the community leaderboard | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Deposit points into own wallet | ✗ | ✓ | ✓ | ✓ | ✓ |
 
@@ -485,16 +494,19 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 4. A creates a Yes/No market in Test Crew closing in 10 minutes, choosing B as moderator.
 5. B sees the market; a signed-in user C who isn't a member gets "This community is invite-only".
 
-**E2E-3 — Resolve and pay out** (LCK-02, RES-02, RES-03, RES-05, RES-14, MOD-03, USR-04)
+**E2E-3 — Resolve and pay out** (LCK-02, RES-02, RES-03, RES-05, RES-14, RES-16, RES-17, RES-19, MOD-03, USR-04)
 1. Continuing E2E-2: A bets 100 on Yes, B's friend D bets 300 on No.
 2. Wait for the deadline → market shows "Ended"; betting is gone.
-3. B's nav shows a Mod Queue badge of 1. B opens the market → "Validate: Yes" → confirm.
-4. Banner shows "Resolved: Yes — payouts settled." A's balance rises by 400 (the whole pool) and A sees "You literally called it." with +300 points; D sees "Not this time." D's history shows "Lost 300 pts". B's badge disappears.
+3. B's nav shows a Mod Queue badge of 1. B opens the market → "Validate: Yes" → confirm → B's panel shows "You picked Yes — payouts go out in 5:00" counting down, with no outcome buttons (only "Nullify market"), and B's badge disappears. Calling `POST /markets/:id/resolve` directly with "No" returns 409 and the pick stays "Yes".
+4. During the countdown, A and D see "Yes picked as the winner." with the same countdown; A's balance and D's history haven't changed ("Payout pending").
+5. Close every browser tab and wait 5 minutes. Reopen as A → banner shows "Resolved: Yes — payouts settled.", A's balance rose by 400 (the whole pool) and A sees "You literally called it." with +300 points; D sees "Not this time." and D's history shows "Lost 300 pts".
 
-**E2E-4 — Nullify** (RES-08, USR-04)
+**E2E-4 — Nullify** (RES-08, RES-18, USR-04)
 1. Create a market, have two users bet, let it close.
 2. Moderator clicks "Nullify market" → confirm.
 3. Both users' balances return to what they were before betting; both histories show "Refunded".
+4. Repeat with a second market, but first "Validate" an option, then click "Nullify market" within the 5-minute countdown → both users are refunded at once.
+5. Wait past the original payout time → nobody is paid, the market stays nullified, and the moderator has no buttons left.
 
 **E2E-5 — Guard rails** (BET-04, BET-05, BET-08, MKT-06, WAL-04, RES-01)
 1. Type a stake above your balance → "That's more than your balance." and the button is disabled. Send one anyway through the API → "You only have N pts".
@@ -527,7 +539,7 @@ Run these by hand against the full stack (frontend + Go backend) before declarin
 1. Open the same OPEN market as user A (browser 1) and user B (browser 2).
 2. B stakes 100 → within ~5 s A's odds, chart and Recent activity update without a reload, and A's half-typed stake is kept.
 3. Switch A's browser to another tab for a minute → the network tab shows no market requests while hidden; switching back refreshes at once.
-4. Let the market close; the moderator resolves it from a third browser → within ~5 s A sees the outcome banner, and A's balance updates if A won.
+4. Let the market close; the moderator validates an option from a third browser → within ~5 s A sees "<option> picked as the winner" and the countdown; when it ends A sees the outcome banner, and A's balance updates if A won.
 5. After it's resolved, the network tab shows no more polling.
 
 ---
@@ -557,6 +569,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 17 | Should the leaderboard need a minimum number of settled predictions? Today someone 1-for-1 (100%) ranks above someone 9-for-10 (90%). | LDR-01 | Decide a minimum (e.g. 3) or accept it for the MVP. |
 | 18 | Should the stake confirmation step be skippable for small stakes? | BET-14 | Decide after user testing. |
 | 19 | Live updates use polling (every 5 s), so they lag by up to 5 s and cost 2 requests per viewer per 5 s even when nothing changes. Only the market page is live; Home, community and Mod queue pages update on navigation or window focus. | ODD-08, API-09, PERF-04 | Fine for the MVP. Post-MVP, push changes over Server-Sent Events or WebSockets, or support conditional requests (`ETag` / `If-None-Match` → `304`) to make idle polls cheap. |
+| 20 | The 5-minute grace period is fixed. | RES-16 | Keep it a single backend setting (`PAYOUT_GRACE_MINUTES`); the UI reads `payoutAt` from the API, so changing it needs no frontend change except the wording in the confirmation dialog. |
 
 ---
 
@@ -573,9 +586,9 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | MKT | 15 | 14 | 1 | 0 | 0 | 10 |
 | ODD | 8 | 8 | 0 | 0 | 0 | 7 |
 | BET | 15 | 14 | 1 | 0 | 0 | 11 |
-| LCK | 4 | 4 | 0 | 0 | 0 | 2 |
-| RES | 14 | 12 | 0 | 1 | 1 | 10 |
-| MOD | 4 | 4 | 0 | 0 | 0 | 4 |
+| LCK | 4 | 4 | 0 | 0 | 0 | 3 |
+| RES | 18 | 16 | 0 | 1 | 1 | 15 |
+| MOD | 5 | 5 | 0 | 0 | 0 | 4 |
 | FEED | 7 | 6 | 0 | 1 | 0 | 6 |
 | ACT | 3 | 3 | 0 | 0 | 0 | 3 |
 | LDR | 5 | 3 | 1 | 1 | 0 | 4 |
@@ -584,9 +597,9 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | A11Y | 7 | 4 | 3 | 0 | 0 | 4 |
 | API | 9 | 7 | 1 | 0 | 1 | 5 |
 | SEC | 9 | 5 | 0 | 2 | 2 | 2 |
-| DATA | 6 | 0 | 1 | 0 | 5 | 0 |
+| DATA | 7 | 0 | 1 | 0 | 6 | 0 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **200** | **154** | **14** | **13** | **19** | **123** |
+| **Total** | **206** | **159** | **14** | **13** | **20** | **129** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. Update the Status and Test columns in the same PR that changes the behaviour.
