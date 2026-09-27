@@ -21,7 +21,9 @@ type Me struct {
 	UserStats
 	Email     string    `json:"email"`
 	Balance   int64     `json:"balance"`
-	CreatedAt time.Time `json:"createdAt"`
+	// NextDailyBonusAt is when the next daily bonus can be claimed; claimable once past.
+	NextDailyBonusAt time.Time `json:"nextDailyBonusAt"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 type UserProfile struct {

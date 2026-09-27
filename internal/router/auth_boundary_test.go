@@ -21,7 +21,7 @@ func TestSEC01AllProtectedRoutes(t *testing.T) {
 		{"GET", "/communities/1"}, {"POST", "/communities/1/join"}, {"GET", "/communities/1/members"}, {"PATCH", "/communities/1/members/2"}, {"DELETE", "/communities/1/members/2"},
 		{"GET", "/markets"}, {"GET", "/markets/1"}, {"POST", "/communities/1/markets"}, {"GET", "/communities/1/markets"},
 		{"POST", "/markets/1/positions"}, {"POST", "/markets/1/resolve"}, {"POST", "/markets/1/cancel"}, {"GET", "/markets/1/activity"},
-		{"GET", "/me/wallet"}, {"POST", "/me/wallet/deposit"}, {"GET", "/me/positions"}, {"GET", "/me/transactions"}, {"GET", "/me/mod-queue"}, {"GET", "/communities/1/leaderboard"},
+		{"GET", "/me/wallet"}, {"POST", "/me/daily-bonus"}, {"GET", "/me/positions"}, {"GET", "/me/transactions"}, {"GET", "/me/mod-queue"}, {"GET", "/communities/1/leaderboard"},
 	} {
 		res, err := app.Test(httptest.NewRequest(route.method, "/api/v1"+route.path, nil))
 		if err != nil {

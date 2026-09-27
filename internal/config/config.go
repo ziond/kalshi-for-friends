@@ -40,8 +40,12 @@ type Config struct {
 
 	// InitialBalance is granted through an INITIAL_BONUS ledger entry at
 	// registration, never through a wallet column default.
-	InitialBalance  int64
-	DepositsEnabled bool
+	InitialBalance int64
+
+	// DailyBonusPoints are claimable once every DailyBonusInterval; the
+	// first claim opens one interval after signup. Missed days don't stack.
+	DailyBonusPoints   int64
+	DailyBonusInterval time.Duration
 
 	// PayoutGrace is how long after a moderator picks a winner the payout
 	// waits; until then the market can only be nullified.
@@ -131,10 +135,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: INITIAL_BALANCE must be a positive safe integer")
 	}
 	cfg.InitialBalance = balance
-	cfg.DepositsEnabled, err = strconv.ParseBool(getEnv("DEPOSITS_ENABLED", "true"))
-	if err != nil {
-		return nil, errors.New("config: invalid DEPOSITS_ENABLED")
+	cfg.DailyBonusPoints, err = strconv.ParseInt(getEnv("DAILY_BONUS_POINTS", "1000"), 10, 64)
+	if err != nil || cfg.DailyBonusPoints <= 0 || cfg.DailyBonusPoints > 1000000 {
+		return nil, errors.New("config: DAILY_BONUS_POINTS must be a whole number from 1 to 1000000")
 	}
+	hours, err := strconv.Atoi(getEnv("DAILY_BONUS_HOURS", "24"))
+	if err != nil || hours < 1 || hours > 720 {
+		return nil, errors.New("config: DAILY_BONUS_HOURS must be a whole number from 1 to 720")
+	}
+	cfg.DailyBonusInterval = time.Duration(hours) * time.Hour
 	grace, err := strconv.Atoi(getEnv("PAYOUT_GRACE_MINUTES", "5"))
 	if err != nil || grace < 1 || grace > 1440 {
 		return nil, errors.New("config: PAYOUT_GRACE_MINUTES must be a whole number from 1 to 1440")

@@ -13,7 +13,8 @@ import (
 
 func setupConfig(t *testing.T) {
 	t.Helper()
-	t.Setenv("DEPOSITS_ENABLED", "")
+	t.Setenv("DAILY_BONUS_POINTS", "")
+	t.Setenv("DAILY_BONUS_HOURS", "")
 	t.Setenv("FRONTEND_URL", "")
 	t.Chdir(t.TempDir())
 	for _, name := range []string{"JWT_PUBLIC_KEY", "JWT_PUBLIC_KEY_FILE", "ACCESS_TOKEN_TTL", "REFRESH_TOKEN_TTL"} {
@@ -159,5 +160,26 @@ func TestRES16PayoutGraceMinutes(t *testing.T) {
 		if _, err := Load(); err == nil {
 			t.Fatalf("PAYOUT_GRACE_MINUTES=%s accepted", bad)
 		}
+	}
+}
+
+func TestWAL11DailyBonusSettings(t *testing.T) {
+	setupConfig(t)
+	t.Setenv("DB_PASSWORD", "test")
+	cfg, err := Load()
+	if err != nil || cfg.DailyBonusPoints != 1000 || cfg.DailyBonusInterval != 24*time.Hour {
+		t.Fatalf("defaults = %v, %v; want 1000 every 24h", cfg, err)
+	}
+	for name, bad := range map[string][]string{
+		"DAILY_BONUS_POINTS": {"0", "-1", "1.5", "lots", "1000001"},
+		"DAILY_BONUS_HOURS":  {"0", "-1", "1.5", "day", "721"},
+	} {
+		for _, v := range bad {
+			t.Setenv(name, v)
+			if _, err := Load(); err == nil {
+				t.Fatalf("%s=%s accepted", name, v)
+			}
+		}
+		t.Setenv(name, "")
 	}
 }

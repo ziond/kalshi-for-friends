@@ -147,8 +147,11 @@ func TestE2E_MarketWalletLifecycle(t *testing.T) {
 	if winner.body["predictionScore"] != float64(100) || winner.body["totalPredictions"] != float64(1) || loser.body["predictionScore"] != float64(0) || loser.body["totalPredictions"] != float64(1) {
 		t.Fatalf("LDR-03: wrong scores: winner=%v loser=%v", winner.body, loser.body)
 	}
-	expect(t, call(t, app, "POST", "/me/wallet/deposit", alice, map[string]any{"amount": 1.5}), 400, "VALIDATION_ERROR")
-	expect(t, call(t, app, "POST", "/me/wallet/deposit", alice, map[string]any{"amount": 500}), 200, "")
+	expect(t, call(t, app, "POST", "/me/wallet/deposit", alice, map[string]any{"amount": 500}), 404, "")
+	if _, err := pool.Exec(context.Background(), `UPDATE wallets SET next_daily_bonus_at=now()-interval '1 minute'`); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, app, "POST", "/me/daily-bonus", alice, nil), 200, "")
 	var mismatch int
 	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM wallets w WHERE balance<>(SELECT COALESCE(sum(amount),0) FROM transactions WHERE user_id=w.user_id)`).Scan(&mismatch); err != nil || mismatch != 0 {
 		t.Fatalf("ledger mismatch: %d %v", mismatch, err)
