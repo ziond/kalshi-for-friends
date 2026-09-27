@@ -63,25 +63,26 @@ func (h *Handler) JoinPublic(c *fiber.Ctx) error {
 // PublicInvite is the signed-out invite lookup behind link previews. It
 // returns only what the link already grants: name, visibility, member count.
 func (h *Handler) PublicInvite(c *fiber.Ctx) error {
+	c.Set("Cache-Control", "no-store")
 	code := strings.ToUpper(strings.TrimSpace(c.Params("code")))
 	var name, visibility string
 	var memberCount int64
 	err := h.svc.pool.QueryRow(c.UserContext(), `SELECT c.name, c.visibility,
  (SELECT count(*) FROM community_members m WHERE m.community_id = c.id)
- FROM communities c WHERE c.invite_code = $1`, code).Scan(&name, &visibility, &memberCount)
+ FROM communities c WHERE c.invite_code = $1 AND c.invite_expires_at > clock_timestamp()`, code).Scan(&name, &visibility, &memberCount)
 	if database.IsNoRows(err) {
 		return apperror.New(404, "INVALID_INVITE_CODE", "Invalid invite code")
 	}
 	if err != nil {
 		return err
 	}
-	c.Set("Cache-Control", "public, max-age=300")
 	return c.JSON(fiber.Map{"inviteCode": code, "community": fiber.Map{
 		"name": name, "visibility": visibility, "memberCount": memberCount,
 	}})
 }
 
 func (h *Handler) InvitePreview(c *fiber.Ctx) error {
+	c.Set("Cache-Control", "no-store")
 	code := strings.ToUpper(strings.TrimSpace(c.Params("code")))
 	id, err := findIDByInviteCode(c.UserContext(), h.svc.pool, code)
 	if database.IsNoRows(err) {

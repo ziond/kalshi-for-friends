@@ -128,7 +128,7 @@ func (s *Service) Create(ctx context.Context, userID int64, req CreateCommunityR
 
 func (s *Service) Join(ctx context.Context, userID int64, req JoinCommunityRequest) (*CommunityDetail, error) {
 	code := strings.ToUpper(strings.TrimSpace(req.InviteCode))
-	invalid := apperror.New(http.StatusNotFound, "INVALID_INVITE_CODE", "Invite code is invalid or has been replaced")
+	invalid := apperror.New(http.StatusNotFound, "INVALID_INVITE_CODE", "Invite link is invalid, expired, or has been replaced")
 	if code == "" {
 		return nil, invalid
 	}
@@ -146,10 +146,11 @@ func (s *Service) Join(ctx context.Context, userID int64, req JoinCommunityReque
 			return err
 		}
 		var current string
-		if err := tx.QueryRow(ctx, `SELECT invite_code FROM communities WHERE id=$1`, communityID).Scan(&current); err != nil {
+		var valid bool
+		if err := tx.QueryRow(ctx, `SELECT invite_code, invite_expires_at > clock_timestamp() FROM communities WHERE id=$1`, communityID).Scan(&current, &valid); err != nil {
 			return err
 		}
-		if current != code {
+		if current != code || !valid {
 			return invalid
 		}
 		inserted, err := insertMember(ctx, tx, communityID, userID, RoleMember)

@@ -29,6 +29,13 @@ Status: **draft, authoritative for the backend** — the Go API implements what 
 
 ## 2. Conventions
 
+Community invite codes expire 15 minutes after creation or regeneration.
+Expired codes return `404 INVALID_INVITE_CODE` from public/authenticated previews
+and invite-based joins. Administrators generate a fresh code using
+`POST /communities/:id/invite-code`; reads never extend expiry. Existing members
+and direct joins to public communities are unaffected. Preview responses use
+`Cache-Control: no-store` so caches do not extend a link's effective validity.
+
 - Base path: `/api/v1`
 - JSON fields are camelCase.
 - IDs are JSON numbers (BIGSERIAL stays below JS's 2^53 limit).

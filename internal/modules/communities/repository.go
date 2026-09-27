@@ -101,7 +101,7 @@ func insertMember(ctx context.Context, db database.DBTX, communityID, userID int
 
 func findIDByInviteCode(ctx context.Context, db database.DBTX, inviteCode string) (int64, error) {
 	var id int64
-	err := db.QueryRow(ctx, `SELECT id FROM communities WHERE invite_code = $1`, inviteCode).Scan(&id)
+	err := db.QueryRow(ctx, `SELECT id FROM communities WHERE invite_code = $1 AND invite_expires_at > clock_timestamp()`, inviteCode).Scan(&id)
 	return id, err
 }
 
@@ -136,7 +136,7 @@ func updateCommunity(ctx context.Context, db database.DBTX, communityID int64,
 func updateInviteCode(ctx context.Context, db database.DBTX, communityID int64, inviteCode string) error {
 	_, err := db.Exec(ctx, `
 		UPDATE communities
-		SET invite_code = $2, updated_at = CURRENT_TIMESTAMP
+		SET invite_code = $2, invite_expires_at = clock_timestamp() + INTERVAL '15 minutes', updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1`, communityID, inviteCode)
 	return err
 }
