@@ -8,10 +8,10 @@ See [alignment and verification status](docs/requirements-alignment.md) before d
 - Auth: `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout` (Ed25519-signed JWTs in HTTP-only cookies).
   Registration creates the user, wallet, and `INITIAL_BONUS` ledger entry in one
   transaction and also signs the user in.
-- Users: `GET /me`, `PATCH /me`, `GET /users/:id`.
+- Users: `GET /me`, `PATCH /me`, `GET /users/lookup?username=`, `GET /users/:id`.
 - Points: `GET /me/wallet` and `POST /me/daily-bonus` (1,000 points every 24 hours,
   never stacked). There is no deposit endpoint.
-- Communities: list/create/join/get/update, invite-code regeneration, member list,
+- Communities: list/create/join/get/update, Discover with `?q=` search, invite-code regeneration, member list,
   role changes, and remove/leave (a community always keeps at least one admin).
 - Invites: `GET /invites/:code` (signed in) and `GET /public/invites/:code`, the one
   signed-out read, which returns only name, visibility and member count for link previews.

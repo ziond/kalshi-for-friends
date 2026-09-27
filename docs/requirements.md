@@ -98,6 +98,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | `points_test` | `internal/modules/points/api_test.go` |
 | `rate_limit_test` | `internal/middleware/rate_limit_test.go` |
 | `invite_expiry_test` | `internal/router/invite_expiry_test.go` |
+| `search_and_lookup_test` | `internal/router/search_and_lookup_test.go` |
 | `schema.sql` | `tests/schema.sql` (database constraints; run by `scripts/test-migrations.sh`) |
 
 ### 1.5 Glossary
@@ -211,7 +212,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | COM-01 | A user can create a community with a name, optional description and privacy setting. | "Create → New community", "+ New community" on Home or Groups opens the form. Name is required (max 100 characters). Privacy defaults to Public. On success the user lands on the new community's page. | Must | Built (mock) | `community.test` |
 | COM-02 | The creator becomes the community's ADMIN. | Right after creation the creator's role is ADMIN, shown as "Creator" on their profile. | Must | Built (mock) | `api.test` |
 | COM-03 | Public communities have community moderators. | When creating a public community the creator can add moderators by username; the creator is always a moderator too. The page shows "moderated by <names>". | Must | Built (mock) | `community.test` |
-| COM-04 | Unknown moderator usernames are caught before the community is created. | Each username added under "Choose moderators" is checked as it's added (case-insensitive). A match shows a green chip with ✓ and the stored spelling. No match shows a red chip "· not found" and the alert "No user called “X”. Check the spelling or remove them.", and "Create community" stays disabled until it's removed. Adding yourself says "You're a moderator automatically."; adding a name twice (any case) says "X is already on the list." If a name can't be checked, the chip stays neutral and the server's `VALIDATION_ERROR` ("Unknown username: X") appears under the moderators. Nothing is created and no user is ever created. | Should | Partial — frontend and mock built, and the Go API rejects unknown names on create; the API doesn't have `GET /users/lookup` yet, so names are only checked when you press Create | `community.test`, `api.test` |
+| COM-04 | Unknown moderator usernames are caught before the community is created. | Each username added under "Choose moderators" is checked as it's added (case-insensitive). A match shows a green chip with ✓ and the stored spelling. No match shows a red chip "· not found" and the alert "No user called “X”. Check the spelling or remove them.", and "Create community" stays disabled until it's removed. Adding yourself says "You're a moderator automatically."; adding a name twice (any case) says "X is already on the list." If a name can't be checked, the chip stays neutral and the server's `VALIDATION_ERROR` ("Unknown username: X") appears under the moderators. Nothing is created and no user is ever created. | Should | Built (mock + API) | `community.test`, `api.test`, `search_and_lookup_test` |
 | COM-05 | Private communities don't have community moderators. | Choosing Private hides the moderator picker and explains that each market gets its own moderator. | Must | Built (mock) | `community.test` |
 | COM-06 | Private communities get an invite code. | A private community has a unique invite code from the moment it's created, valid for 15 minutes (INV-09). | Must | Built (mock) | `api.test` |
 | COM-07 | The community page shows the community's details. | Shows avatar, name, Public/Private badge, member count, moderators and description, plus a "Leaderboard" button for members (LDR-05). | Must | Built (mock) | `community.test`, `leaderboard.test` |
@@ -228,7 +229,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | COM-18 | The creator can edit the name and description. | Changes appear everywhere after save. | Could | Not built — API only, no UI | — |
 | COM-19 | A user can't join the same community twice. | Joining again returns 409 `ALREADY_MEMBER`; the database has a unique (community, user) constraint. | Must | Built (mock) | `api.test` |
 | COM-20 | Users can see all their communities in one place. | `/communities` ("Groups" in the nav) lists every community the user belongs to with privacy, member count and a Creator/Moderator chip where it applies, plus "+ New community" and a link to Discover. Communities the user hasn't joined aren't listed. | Must | Built (mock) | `community.test` |
-| COM-21 | The API says when an invite link expires. | `GET /communities/:id` (for creators and moderators) and `POST /communities/:id/invite-code` return `inviteExpiresAt` next to `inviteCode`, so the dialog can count down and mark the link expired. Without it the dialog falls back to "This link works for 15 minutes after it's created." | Should | Partial — frontend and mock built; the Go API doesn't send `inviteExpiresAt` yet | `community.test`, `api.test` |
+| COM-21 | The API says when an invite link expires. | `GET /communities/:id` (for creators and moderators) and `POST /communities/:id/invite-code` return `inviteExpiresAt` next to `inviteCode`, so the dialog can count down and mark the link expired. Without it the dialog falls back to "This link works for 15 minutes after it's created." | Should | Built (mock + API) | `community.test`, `api.test`, `search_and_lookup_test` |
 
 ### 3.5 Discover (DSC)
 
@@ -359,7 +360,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | FEED-05 | Home search shows matching communities and markets. | Typing in "Search markets or communities" (after a short pause) replaces the feed with results: "Communities · N" then "Markets · N". Communities the user hasn't joined are tagged "Not joined". Up to 12 markets show, highest volume first, any status; if more match, the count reads "12+" with a hint to add another word. With no matches it says "Nothing matches “x”. Try another word, or check the spelling." The × button or Escape clears the search and brings the feed back. | Should | Built (mock) | `home.test` |
 | FEED-06 | Search covers all markets, not only the ones shown. | Markets are searched on the server with `GET /markets?q=`: title or community name contains the text (case-insensitive), across every public community plus the user's own communities. | Should | Built (mock + API) | `home.test`, `api.test` |
 | FEED-07 | Home prompts users to create a market. | A lime "Friend group forecast" card ("Someone's getting exposed today.") has "+ Create a market", linking to the create form. | Should | Built (mock) | `home.test` |
-| FEED-08 | Search finds communities too. | Results include the user's own communities (private ones too) and public communities from `GET /communities/discover?q=`, matching name or description (case-insensitive), without duplicates, the user's own first. Private communities the user isn't in never appear, and neither do their markets. | Should | Partial — frontend and mock built; the Go API ignores `q` on Discover, so the frontend filters the full public list itself (correct, but downloads every public community) | `home.test`, `api.test` |
+| FEED-08 | Search finds communities too. | Results include the user's own communities (private ones too) and public communities from `GET /communities/discover?q=`, matching name or description (case-insensitive), without duplicates, the user's own first. Private communities the user isn't in never appear, and neither do their markets. | Should | Built (mock + API) | `home.test`, `api.test`, `search_and_lookup_test` |
 
 ### 3.14 Market activity (ACT)
 
@@ -375,7 +376,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 |---|---|---|---|---|---|
 | LDR-01 | Each community has a leaderboard ranked by win rate. | `/communities/:id/leaderboard` ranks members by win rate (correct ÷ settled predictions in that community). Ties go to more correct calls, then more net profit; identical records share a rank (1, 2, 2, 4). Members with no settled predictions aren't ranked. The UI re-ranks whatever order the API returns. | Should | Built (mock) | `ranking.test`, `leaderboard.test` |
 | LDR-02 | Prediction stats update when markets settle. | After a market resolves, each participant's total and correct predictions update, globally and on the community leaderboard. Each market counts once per user; refunded bets don't count. | Should | Partial — leaderboard stats computed in the mock; global stats are backend only | `leaderboard.test` |
-| LDR-03 | The prediction score formula is defined. | `users.prediction_score = round(100 × correct_predictions / total_predictions)`, ties rounded up; 0 with no settled predictions. Count each resolved market once; exclude all refunds. | Should | Implemented locally — migration and database verification pending | `backend/tests/schema.sql`; `backend/internal/router/lifecycle_test.go` |
+| LDR-03 | The prediction score formula is defined. | `users.prediction_score = round(100 × correct_predictions / total_predictions)`, ties rounded up; 0 with no settled predictions. Count each resolved market once; exclude all refunds. | Should | Backend only | `schema.sql`, `lifecycle_test` |
 | LDR-04 | The leaderboard shows who's winning at a glance. | #1 gets a lime "Top caller" card with their win rate, "Called N of M" and net points. Everyone else is listed with rank, avatar, "N/M called", net points (green if up, red if down), win rate and a bar. The user's own row is outlined and marked "You", and the header says "You're #R of N with a P% win rate." Members with no settled predictions are listed under "Yet to call one". With no settled predictions at all it says so. | Should | Built (mock) | `leaderboard.test` |
 | LDR-05 | Members can reach the leaderboard. | The community page shows "Leaderboard" to members; non-members don't see it (the endpoint is members-only). | Should | Built (mock) | `leaderboard.test` |
 
@@ -596,10 +597,10 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 3 | Rounding remainder from payouts isn't distributed. | RES-06, DATA-05 | Implement in the backend's settlement transaction. |
 | 4 | Public-community non-members can bet in the mock. | BET-09 | Decide: must users join before betting? Recommended: yes. Enforce in backend and mock. |
 | 5 | Can a moderator bet on their own market? | §5 | Decide and add RES-13. |
-| 6 | ~~Unknown moderator usernames are silently dropped.~~ | COM-04 | Done: the Go API rejects them with a `moderatorUsernames` field error, and the create form shows it under the moderators. Remaining backend step: add `GET /users/lookup` so names are checked as they're typed. |
+| 6 | ~~Unknown moderator usernames are silently dropped.~~ | COM-04 | Done: the Go API rejects them with a `moderatorUsernames` field error, and the create form shows it under the moderators. `GET /users/lookup` now checks names as they're typed. |
 | 7 | No UI for members, leaving, roles, invite reset, editing, transactions, other profiles. | COM-15–18, WAL-09, USR-07–08 | Not in the design mockups. Decide which are MVP. |
 | 8 | Market description can't be entered. | MKT-14 | Add a description field to the create form. |
-| 9 | ~~Search only filters the three trending markets per section.~~ | FEED-06, FEED-08 | Done: Home searches markets on the server (`GET /markets?q=`, already in the Go API) and shows matching communities. Remaining backend step: support `q` on `GET /communities/discover` so the full public list isn't downloaded for every search. |
+| 9 | ~~Search only filters the three trending markets per section.~~ | FEED-06, FEED-08 | Done: Home searches markets on the server (`GET /markets?q=`, already in the Go API) and shows matching communities. `GET /communities/discover?q=` now filters on the server. |
 | 10 | Prediction score formula agreed with Owen. | LDR-03 | Rounded accuracy × 100, excluding refunds; apply migration 000008 and run database integration tests. |
 | 11 | The faint label grey (#7F8A81) fails contrast on card and raised surfaces. | A11Y-06 | Lighten `--color-faint` to about #96A197 (passes on all three surfaces), or use the muted grey on cards. |
 | 12 | The daily bonus amount (1,000) and interval (24 hours) are fixed. | WAL-11 | Keep both as backend settings. The UI reads `nextDailyBonusAt` and the claimed amount from the API; only its wording ("Claim 1,000 pts") assumes 1,000. |
@@ -613,7 +614,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 20 | The 5-minute grace period is fixed. | RES-16 | The backend reads it from one setting, `PAYOUT_GRACE_MINUTES` (default 5). The UI reads `payoutAt` from the API, so changing it needs no frontend change except the "5 minutes" wording (`PAYOUT_GRACE_MINUTES` in the frontend). Keep the two in sync. |
 | 21 | Free ngrok tunnels intercept browser requests with a warning page. | API-10 | Handled by the frontend header. For shared testing, a paid ngrok plan or another tunnel avoids the page entirely. |
 | 22 | Link previews only work on a public URL. Chat apps fetch the link themselves, so `localhost` or a LAN address never previews, and apps cache a preview for hours or days after first seeing a link. | INV-06, NAV-08 | Check previews after deploying to Vercel (image URLs use its production URL automatically). Use each app's cache-busting or debug tool when testing changes. |
-| 23 | ~~Invite links expire 15 minutes after they're issued, but nothing in the UI can issue a new code.~~ | INV-09, COM-12, COM-17 | Done: the invite dialog has "Get a new link" for the creator and says links last 15 minutes. Remaining backend step: return `inviteExpiresAt` with `inviteCode` (COM-21) so the dialog can show time left. |
+| 23 | ~~Invite links expire 15 minutes after they're issued, but nothing in the UI can issue a new code.~~ | INV-09, COM-12, COM-17 | Done: the invite dialog has "Get a new link" for the creator and says links last 15 minutes. The API returns `inviteExpiresAt` with `inviteCode` (COM-21), so the dialog shows time left. |
 | 24 | ~~The frontend caches the public invite lookup for 5 minutes.~~ | INV-06, INV-09 | Done: `lib/api/public-invite.ts` fetches with `cache: "no-store"`. Chat apps still cache previews for hours (issue 22), so an old preview can outlive the link; joining still fails correctly. |
 
 ---
@@ -625,7 +626,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | AUTH | 24 | 15 | 4 | 0 | 5 | 15 |
 | USR | 8 | 6 | 0 | 2 | 0 | 4 |
 | WAL | 10 | 7 | 0 | 1 | 2 | 8 |
-| COM | 21 | 16 | 2 | 3 | 0 | 17 |
+| COM | 21 | 18 | 0 | 3 | 0 | 17 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
 | INV | 9 | 8 | 0 | 0 | 1 | 8 |
 | MKT | 15 | 14 | 1 | 0 | 0 | 10 |
@@ -634,9 +635,9 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | LCK | 4 | 4 | 0 | 0 | 0 | 3 |
 | RES | 18 | 16 | 0 | 1 | 1 | 16 |
 | MOD | 5 | 5 | 0 | 0 | 0 | 4 |
-| FEED | 8 | 7 | 1 | 0 | 0 | 8 |
+| FEED | 8 | 8 | 0 | 0 | 0 | 8 |
 | ACT | 3 | 3 | 0 | 0 | 0 | 3 |
-| LDR | 5 | 3 | 1 | 1 | 0 | 4 |
+| LDR | 5 | 3 | 1 | 0 | 1 | 5 |
 | NAV | 8 | 7 | 1 | 0 | 0 | 4 |
 | UX | 7 | 7 | 0 | 0 | 0 | 4 |
 | A11Y | 7 | 4 | 3 | 0 | 0 | 4 |
@@ -645,6 +646,6 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | DATA | 8 | 0 | 1 | 0 | 7 | 4 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **216** | **169** | **16** | **9** | **22** | **151** |
+| **Total** | **216** | **172** | **13** | **8** | **23** | **152** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. Withdrawn requirements aren't counted. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.
