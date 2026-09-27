@@ -1,4 +1,4 @@
-import type { ID, ISODate, MarketStatus, Role } from "@/types";
+import type { ID, ISODate, MarketStatus, MarketType, Role } from "@/types";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -54,11 +54,28 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 
 // Avatar colours aren't stored by the backend; derive a stable one from the id.
-const AVATAR_COLORS = ["#FF5A36", "#2F9E5B", "#7C5CFC", "#F2A93B", "#E2574C", "#3B7DF2"];
+const AVATAR_COLORS = ["#B7A2FF", "#D5FF5F", "#A6E5C0", "#FFB36B", "#FF908B", "#8EC5FF"];
 
 export function avatarColor(id: ID): string {
   return AVATAR_COLORS[(id - 1 + AVATAR_COLORS.length) % AVATAR_COLORS.length];
 }
 
 // Line colours for multi-outcome charts, in option order.
-export const CHART_COLORS = ["#FF5A36", "#3B7DF2", "#F2A93B", "#7C5CFC", "#2F9E5B"];
+export const CHART_COLORS = ["#D5FF5F", "#B7A2FF", "#FFB36B", "#A6E5C0", "#FF908B", "#8EC5FF"];
+
+const YES_COLOR = "#A6E5C0";
+const NO_COLOR = "#FF908B";
+
+/** Colour for an outcome by its position in market.options: YES green / NO coral, otherwise the chart palette. */
+export function outcomeColor(marketType: MarketType, index: number): string {
+  if (marketType === "BINARY") return index === 0 ? YES_COLOR : NO_COLOR;
+  return CHART_COLORS[index % CHART_COLORS.length];
+}
+
+/** "Good morning" / "Good afternoon" / "Good evening" for the given time. */
+export function greeting(now = new Date()): string {
+  const hour = now.getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  return "Good evening";
+}

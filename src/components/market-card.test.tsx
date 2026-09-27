@@ -36,13 +36,13 @@ describe("MarketCard", () => {
     expect(screen.getByText("Fantasy Football Legends")).toBeInTheDocument();
     expect(screen.getByText("Will Jordan's team make the playoffs?")).toBeInTheDocument();
     expect(screen.getByText("58%")).toBeInTheDocument();
-    expect(screen.getByText("3.2k pts volume")).toBeInTheDocument();
+    expect(screen.getByText("3.2k pts staked")).toBeInTheDocument();
     expect(screen.getByText("3d left")).toBeInTheDocument();
   });
 
   it("shows the user's stake", () => {
     render(<MarketCard market={makeMarket({ myStake: { optionId: 1, amount: 200, potentialPayout: 344 } })} />);
-    expect(screen.getByText("You: 200 on Yes")).toBeInTheDocument();
+    expect(screen.getByText("Your stake: 200 on Yes")).toBeInTheDocument();
   });
 
   it("shows the winner once resolved", () => {

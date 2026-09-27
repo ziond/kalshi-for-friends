@@ -1,36 +1,51 @@
 @import "tailwindcss";
 
-/* Huddle design tokens (from the Claude Design file). Light theme only. */
+/* "called it." design tokens. Dark theme only; lime is the single brand/action colour. */
 @theme {
-  --font-sans: var(--font-nunito), system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 
-  --color-canvas: #fbf7f0;
-  --color-ink: #1c1b19;
-  --color-muted: #6b6459;
-  --color-faint: #a39c90;
-  --color-line: rgb(28 27 25 / 0.1);
-  --color-hover: rgb(28 27 25 / 0.05);
+  /* Surfaces, darkest to lightest */
+  --color-canvas: #171b19; /* page background */
+  --color-surface: #252b27; /* market cards and panels */
+  --color-raised: #303832; /* inputs, selected items, secondary cards */
+  --color-line: #3a443c; /* subtle separation */
 
-  --color-brand: #ff5a36;
-  --color-brand-hover: #e14a26;
-  --color-brand-soft: #fff4ec;
-  --color-brand-dark: #b8431e;
+  /* Text */
+  --color-ink: #f7f8f2; /* headings and important information */
+  --color-muted: #b4bdb4; /* descriptions and supporting labels */
+  --color-faint: #7f8a81; /* tertiary labels */
 
-  --color-yes: #2f9e5b;
-  --color-yes-dark: #1e7a44;
-  --color-no: #e2574c;
-  --color-private: #7c5cfc;
-  --color-gold: #f2a93b;
-  --color-blue: #3b7df2;
+  /* Brand */
+  --color-lime: #d5ff5f; /* main buttons, selected tabs, brand accents */
+  --color-lime-hover: #c4f03f;
+  --color-on-lime: #171b19; /* text on lime */
+
+  /* Meaning */
+  --color-yes: #a6e5c0; /* positive outcome */
+  --color-no: #ff908b; /* negative outcome */
+  --color-purple: #b7a2ff; /* groups and private communities */
+  --color-orange: #ffb36b;
+  --color-live: #4ade80; /* live markets, point balances, winners */
 }
 
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
+  color-scheme: dark;
 }
 
 input,
 select,
 textarea {
   font-family: inherit;
+}
+
+/* Hide number spinners on stake/point inputs. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }

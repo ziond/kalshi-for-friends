@@ -56,7 +56,7 @@ describe("formatRelative", () => {
 
 describe("avatars", () => {
   it("gives each community id a stable colour, cycling through the palette", () => {
-    expect(avatarColor(1)).toBe("#FF5A36");
+    expect(avatarColor(1)).toBe("#B7A2FF");
     expect(avatarColor(7)).toBe(avatarColor(1));
   });
 

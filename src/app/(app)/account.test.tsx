@@ -14,15 +14,18 @@ describe("Mod Queue", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { user } = renderWithClient(<ModQueuePage />);
 
-    const pending = screen.getByRole("heading", { name: "Needs resolution" }).closest("section")!;
+    const pending = await screen.findByRole("region", { name: "Needs resolution" });
     expect(await within(pending).findByRole("link", { name: "Trivia champion crowned tonight" })).toBeInTheDocument();
-    const active = screen.getByRole("heading", { name: "Active — you moderate" }).closest("section")!;
-    expect(within(active).getByText("Who says 'that's what she said' first tonight?")).toBeInTheDocument();
 
     await user.click(within(pending).getByRole("button", { name: "Sam K." }));
 
-    expect(await within(pending).findByText("Nothing waiting on you — nice.")).toBeInTheDocument();
+    expect(await within(pending).findByText("All caught up.")).toBeInTheDocument();
+    expect(within(pending).getByRole("link", { name: /Back to your communities/ })).toHaveAttribute("href", "/communities");
     expect(markets.find((m) => m.id === 9)!.status).toBe("RESOLVED");
+
+    await user.click(screen.getByRole("button", { name: "Active markets" }));
+    const active = screen.getByRole("region", { name: "Active markets" });
+    expect(within(active).getByText("Who says 'that's what she said' first tonight?")).toBeInTheDocument();
   });
 });
 

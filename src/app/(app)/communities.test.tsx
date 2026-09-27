@@ -4,6 +4,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { navigation } from "@/test/navigation";
 import { renderWithClient } from "@/test/render";
+import CommunitiesPage from "./communities/page";
 import CreateCommunityPage from "./communities/new/page";
 import CommunityPage from "./communities/[communityId]/page";
 import DiscoverPage from "./discover/page";
@@ -13,7 +14,7 @@ const waitForPush = (path: string) =>
   waitFor(() => expect(navigation.router.push).toHaveBeenCalledWith(path));
 
 function card(name: string) {
-  return screen.getByRole("link", { name }).closest("div.rounded-2xl") as HTMLElement;
+  return screen.getByRole("link", { name }).closest("article") as HTMLElement;
 }
 
 describe("Discover", () => {
@@ -25,6 +26,18 @@ describe("Discover", () => {
 
     await user.click(within(card("Election Junkies")).getByRole("button", { name: "Join" }));
     expect(await within(card("Election Junkies")).findByRole("button", { name: "Joined ✓" })).toBeInTheDocument();
+  });
+});
+
+describe("Groups page", () => {
+  it("lists the communities you belong to with your role", async () => {
+    renderWithClient(<CommunitiesPage />);
+
+    const own = await screen.findByRole("link", { name: /Fantasy Football Legends/ });
+    expect(own).toHaveAttribute("href", "/communities/1");
+    expect(within(own).getByText("Creator")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Election Junkies/ })).not.toBeInTheDocument(); // not joined
+    expect(screen.getByRole("link", { name: "+ New community" })).toHaveAttribute("href", "/communities/new");
   });
 });
 

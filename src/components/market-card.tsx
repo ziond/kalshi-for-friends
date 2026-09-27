@@ -1,7 +1,15 @@
 import Link from "next/link";
-import type { MarketSummary } from "@/types";
-import { formatPercent, formatPoints, formatTimeLeft } from "@/lib/format";
-import { cn } from "./ui";
+import type { MarketStatus, MarketSummary } from "@/types";
+import { formatPercent, formatPoints, formatTimeLeft, outcomeColor } from "@/lib/format";
+import { CheckIcon, ClockIcon, CoinIcon } from "./icons";
+import { CommunityChip, ProbabilityBar, cn } from "./ui";
+
+const STATUS_LABEL: Record<MarketStatus, string> = {
+  OPEN: "Live market",
+  LOCKED: "Awaiting result",
+  RESOLVED: "Resolved",
+  CANCELLED: "Nullified",
+};
 
 function StatusNote({ market }: { market: MarketSummary }) {
   if (market.status === "CANCELLED") {
@@ -9,13 +17,13 @@ function StatusNote({ market }: { market: MarketSummary }) {
   }
   if (market.status === "RESOLVED") {
     const winner = market.options.find((o) => o.isWinner);
-    return <span className="text-yes">Resolved: {winner?.text}</span>;
+    return <span className="text-live">Resolved: {winner?.text}</span>;
   }
   if (market.myStake) {
     const side = market.options.find((o) => o.id === market.myStake!.optionId)?.text;
     return (
-      <span className="text-brand">
-        You: {market.myStake.amount} on {side}
+      <span className="text-lime">
+        Your stake: {market.myStake.amount} on {side}
       </span>
     );
   }
@@ -24,63 +32,64 @@ function StatusNote({ market }: { market: MarketSummary }) {
 
 export function MarketCard({ market }: { market: MarketSummary }) {
   const isBinary = market.marketType === "BINARY";
-  const yes = market.options[0];
-  const topOutcomes = [...market.options].sort((a, b) => b.probability - a.probability).slice(0, 3);
-  const isPrivate = market.communityVisibility === "PRIVATE";
+  const indexed = market.options.map((option, index) => ({ option, color: outcomeColor(market.marketType, index) }));
+  const rows = isBinary ? indexed : [...indexed].sort((a, b) => b.option.probability - a.option.probability).slice(0, 3);
+  const hidden = market.options.length - rows.length;
 
   return (
     <Link
       href={`/markets/${market.id}`}
-      className="flex min-h-[200px] flex-col gap-3.5 rounded-2xl border border-line bg-white p-4 transition-shadow hover:shadow-[0_6px_20px_rgba(28,27,25,0.08)]"
+      className="group flex flex-col gap-4 rounded-[22px] border border-line bg-surface p-5 transition-colors hover:border-faint/60"
     >
-      <div className="flex items-center justify-between gap-2">
-        <span
-          className={cn(
-            "truncate rounded-[14px] px-2.5 py-1 text-[11px] font-bold",
-            isPrivate ? "bg-private/12 text-private" : "bg-yes/12 text-yes",
-          )}
-        >
-          {market.communityName}
-        </span>
-        <span className="flex-none text-[11px] font-bold text-faint">
+      <div className="flex items-center justify-between gap-3">
+        <CommunityChip name={market.communityName} visibility={market.communityVisibility} />
+        <span className="flex flex-none items-center gap-1.5 text-xs text-muted">
+          <ClockIcon size={13} />
           {formatTimeLeft(market.deadline, market.status)}
         </span>
       </div>
 
-      <h3 className="text-[15px] font-extrabold leading-snug">{market.title}</h3>
-
-      {isBinary ? (
-        <div className="mt-auto flex flex-col gap-2">
-          <div className="flex items-baseline justify-between">
-            <span className="text-[26px] font-extrabold leading-none">{formatPercent(yes.probability)}</span>
-            <span className="text-xs font-bold text-muted">chance of Yes</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-no/20">
-            <div className="h-full rounded-full bg-yes" style={{ width: formatPercent(yes.probability) }} />
-          </div>
+      <div>
+        <h3 className="text-lg leading-snug font-bold tracking-tight">{market.title}</h3>
+        <div className="mt-1.5 text-[11px] font-medium tracking-[0.08em] text-faint uppercase">
+          {isBinary ? "Yes / No" : "Multiple choice"} · {STATUS_LABEL[market.status]}
         </div>
-      ) : (
-        <div className="mt-auto flex flex-col gap-1.5">
-          {topOutcomes.map((o) => (
-            <div key={o.id} className="flex items-center gap-2 text-xs font-bold">
-              <span className="w-20 truncate">{o.text}</span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink/7">
-                <div className="h-full rounded-full bg-brand" style={{ width: formatPercent(o.probability) }} />
-              </div>
-              <span className="w-9 text-right font-extrabold">{formatPercent(o.probability)}</span>
+      </div>
+
+      <div className="mt-auto flex flex-col gap-3">
+        {rows.map(({ option, color }) => (
+          <div key={option.id} className="flex flex-col gap-1.5">
+            <div className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                <span className="truncate">{option.text}</span>
+                {option.isWinner && <CheckIcon size={14} className="flex-none text-live" />}
+              </span>
+              <span className="font-bold tabular-nums" style={{ color }}>{formatPercent(option.probability)}</span>
             </div>
-          ))}
-        </div>
-      )}
+            <ProbabilityBar value={option.probability} color={color} />
+          </div>
+        ))}
+        {hidden > 0 && <div className="text-xs text-faint">+{hidden} more outcome{hidden > 1 ? "s" : ""}</div>}
+      </div>
 
-      <div className="flex items-center justify-between border-t border-ink/6 pt-2.5 text-[11px] font-bold text-faint">
-        <span>{formatPoints(market.totalPool)} volume</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-3.5 text-xs font-medium">
+        <span className="flex items-center gap-1.5 text-muted">
+          <CoinIcon size={13} className="text-faint" />
+          {formatPoints(market.totalPool)} staked
+        </span>
         <StatusNote market={market} />
       </div>
+
+      <span className={cn(
+        "flex items-center justify-center gap-1.5 rounded-xl bg-raised py-2.5 text-sm font-semibold transition-colors",
+        "group-hover:bg-line",
+      )}>
+        View prediction <span aria-hidden>→</span>
+      </span>
     </Link>
   );
 }
 
 export function MarketGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">{children}</div>;
+  return <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-4">{children}</div>;
 }

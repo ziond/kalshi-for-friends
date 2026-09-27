@@ -19,7 +19,7 @@ function ModeratorPicker({ value, onChange }: { value: string[]; onChange: (name
     <div className="flex flex-wrap gap-1.5">
       {value.map((name) => (
         <button key={name} type="button" onClick={() => onChange(value.filter((n) => n !== name))}
-          className="cursor-pointer rounded-2xl bg-ink/6 px-3 py-1.5 text-xs font-bold hover:bg-no/10" title="Remove">
+          className="cursor-pointer rounded-full bg-raised px-3 py-1.5 text-xs font-semibold hover:bg-no/15 hover:text-no" title="Remove">
           {name} ×
         </button>
       ))}
@@ -34,7 +34,7 @@ function ModeratorPicker({ value, onChange }: { value: string[]; onChange: (name
         }}
         onBlur={add}
         placeholder="Add username…"
-        className="w-[130px] rounded-2xl border border-dashed border-ink/20 px-3 py-1.5 text-xs font-semibold outline-none focus:border-brand"
+        className="w-[140px] rounded-full border border-dashed border-line bg-transparent px-3 py-1.5 text-xs text-ink placeholder:text-faint outline-none focus:border-lime/70"
       />
     </div>
   );
@@ -63,8 +63,11 @@ export default function CreateCommunityPage() {
   };
 
   return (
-    <div className="mx-auto flex max-w-[600px] flex-col gap-5 px-4 pt-7 pb-16 sm:px-8">
-      <h1 className="text-2xl font-extrabold">Create a community</h1>
+    <div className="mx-auto flex max-w-[600px] flex-col gap-5 px-4 pt-7 pb-16 sm:px-6">
+      <header>
+        <h1 className="text-[32px] leading-tight font-bold tracking-tight">New community</h1>
+        <p className="mt-1 text-[15px] text-muted">Round up the group chat. Predictions start here.</p>
+      </header>
       <Card>
         <form onSubmit={submit} className="flex flex-col gap-[18px] p-6">
           <Field label="Community name" error={fieldErrors?.name}>
@@ -76,7 +79,7 @@ export default function CreateCommunityPage() {
               placeholder="What's this community about?" className={`${inputClass} min-h-[70px] resize-y`} />
           </Field>
           <div className="flex flex-col gap-2">
-            <span className="text-[13px] font-bold">Privacy</span>
+            <span className="text-[13px] font-semibold">Privacy</span>
             <Segmented
               value={visibility}
               onChange={setVisibility}
@@ -88,21 +91,21 @@ export default function CreateCommunityPage() {
           </div>
           {visibility === "PUBLIC" ? (
             <div className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-bold">Choose moderators</span>
-              <span className="text-xs font-semibold text-faint">
+              <span className="text-[13px] font-semibold">Choose moderators</span>
+              <span className="text-xs text-muted">
                 Public communities need moderators to validate market outcomes for everyone. You&apos;re included
                 automatically.
               </span>
               <ModeratorPicker value={moderators} onChange={setModerators} />
             </div>
           ) : (
-            <p className="rounded-[10px] bg-canvas p-3 text-xs font-semibold text-faint">
+            <p className="rounded-xl bg-raised p-3 text-xs leading-normal text-muted">
               You&apos;ll pick a moderator for each market individually when you create it — different markets can have
               different moderators.
             </p>
           )}
           <ErrorNote error={fieldErrors ? null : create.error} />
-          <Button type="submit" disabled={create.isPending} className="py-3 text-sm font-extrabold">
+          <Button type="submit" disabled={create.isPending} className="rounded-2xl py-3.5 text-[15px]">
             {create.isPending ? "Creating…" : "Create community"}
           </Button>
         </form>

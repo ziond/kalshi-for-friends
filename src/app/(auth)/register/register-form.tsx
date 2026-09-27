@@ -21,8 +21,8 @@ export function RegisterForm({ nextPath }: { nextPath: string }) {
         register.mutate({ username, email, password }, { onSuccess: () => router.push(nextPath) });
       }}
     >
-      <h1 className="text-xl font-extrabold">Join Huddle</h1>
-      <p className="-mt-2 text-[13px] font-semibold text-muted">Everyone starts with 1,000 points.</p>
+      <h1 className="text-2xl font-bold tracking-tight">Join called it.</h1>
+      <p className="-mt-2 text-sm text-muted">Everyone starts with 1,000 points.</p>
       <Field label="Username">
         <input required maxLength={50} autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} />
       </Field>
@@ -33,11 +33,11 @@ export function RegisterForm({ nextPath }: { nextPath: string }) {
         <input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
       </Field>
       <ErrorNote error={register.error} />
-      <Button type="submit" disabled={register.isPending} className="py-3 text-sm font-extrabold">
+      <Button type="submit" disabled={register.isPending} className="rounded-2xl py-3.5 text-[15px]">
         {register.isPending ? "Creating account…" : "Create account"}
       </Button>
-      <p className="text-center text-[13px] font-semibold text-muted">
-        Already have an account? <Link href={nextPath === "/" ? "/login" : `/login?next=${encodeURIComponent(nextPath)}`} className="font-bold text-brand">Log in</Link>
+      <p className="text-center text-[13px] text-muted">
+        Already have an account? <Link href={nextPath === "/" ? "/login" : `/login?next=${encodeURIComponent(nextPath)}`} className="font-semibold text-lime hover:text-lime-hover">Log in</Link>
       </p>
     </form>
   );

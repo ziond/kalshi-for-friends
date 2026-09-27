@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useDeposit, useMe } from "@/hooks/use-me";
 import { MAX_DEPOSIT } from "@/types";
-import { Button, ErrorNote } from "./ui";
+import { CoinIcon } from "./icons";
+import { Button, ErrorNote, inputClass } from "./ui";
 
 const QUICK_AMOUNTS = [500, 1000, 5000];
 
@@ -52,24 +53,23 @@ export function AddPoints() {
           deposit.reset();
         }}
         aria-expanded={open}
-        aria-label="Balance — add points"
-        className="flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-[13px] font-extrabold hover:bg-hover"
+        aria-label={me ? `Balance ${me.balance.toLocaleString()} pts — add points` : "Balance — add points"}
+        className="flex cursor-pointer items-center gap-2 rounded-full border border-line px-3.5 py-1.5 text-sm font-semibold tabular-nums hover:bg-surface"
       >
-        <span className="inline-block size-2 rounded-full bg-gold" />
-        {me ? `${me.balance.toLocaleString()} pts` : "—"}
-        <span className="text-brand">+</span>
+        <CoinIcon size={15} className="text-live" />
+        {me ? me.balance.toLocaleString() : "—"}
       </button>
 
       {open && (
-        <div className="absolute top-11 right-0 z-30 flex w-[260px] flex-col gap-3 rounded-xl border border-line bg-white p-4 shadow-[0_8px_24px_rgba(28,27,25,0.14)]">
+        <div className="absolute top-12 right-0 z-30 flex w-[280px] flex-col gap-3.5 rounded-2xl border border-line bg-surface p-4 shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
           <div>
-            <div className="text-sm font-extrabold">Add points</div>
-            <div className="text-xs font-semibold text-faint">Free during the MVP — top up any time.</div>
+            <div className="text-sm font-bold">Add points</div>
+            <div className="mt-0.5 text-xs text-muted">Virtual points only — top up any time.</div>
           </div>
           <div className="flex gap-2">
             {QUICK_AMOUNTS.map((value) => (
               <button key={value} disabled={deposit.isPending} onClick={() => add(value)}
-                className="flex-1 cursor-pointer rounded-[10px] bg-canvas py-2 text-xs font-extrabold hover:bg-brand-soft disabled:opacity-50">
+                className="flex-1 cursor-pointer rounded-xl bg-raised py-2 text-xs font-semibold hover:bg-line disabled:opacity-50">
                 +{value.toLocaleString()}
               </button>
             ))}
@@ -91,15 +91,15 @@ export function AddPoints() {
               onChange={(e) => setAmount(e.target.value)}
               placeholder="Custom amount"
               aria-label="Custom amount of points"
-              className="min-w-0 flex-1 rounded-[10px] border border-ink/15 px-3 py-2 text-[13px] font-bold outline-none focus:border-brand"
+              className={`${inputClass} min-w-0 flex-1 py-2`}
             />
-            <Button type="submit" className="rounded-[10px]" disabled={!valid || deposit.isPending}>
+            <Button type="submit" className="rounded-xl" disabled={!valid || deposit.isPending}>
               Add
             </Button>
           </form>
           <ErrorNote error={deposit.error} />
           {added !== null && (
-            <p className="text-xs font-bold text-yes-dark">Added {added.toLocaleString()} pts.</p>
+            <p className="text-xs font-semibold text-live">Added {added.toLocaleString()} pts.</p>
           )}
         </div>
       )}

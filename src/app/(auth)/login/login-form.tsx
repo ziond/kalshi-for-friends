@@ -20,7 +20,7 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
         login.mutate({ email, password }, { onSuccess: () => router.push(nextPath) });
       }}
     >
-      <h1 className="text-xl font-extrabold">Welcome back</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
       <Field label="Email">
         <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
       </Field>
@@ -28,11 +28,11 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
         <input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
       </Field>
       <ErrorNote error={login.error} />
-      <Button type="submit" disabled={login.isPending} className="py-3 text-sm font-extrabold">
+      <Button type="submit" disabled={login.isPending} className="rounded-2xl py-3.5 text-[15px]">
         {login.isPending ? "Logging in…" : "Log in"}
       </Button>
-      <p className="text-center text-[13px] font-semibold text-muted">
-        New here? <Link href={nextPath === "/" ? "/register" : `/register?next=${encodeURIComponent(nextPath)}`} className="font-bold text-brand">Create an account</Link>
+      <p className="text-center text-[13px] text-muted">
+        New here? <Link href={nextPath === "/" ? "/register" : `/register?next=${encodeURIComponent(nextPath)}`} className="font-semibold text-lime hover:text-lime-hover">Create an account</Link>
       </p>
     </form>
   );

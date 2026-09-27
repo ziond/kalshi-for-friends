@@ -1,82 +1,128 @@
 "use client";
 
 import Link from "next/link";
-import { ErrorNote, Skeleton } from "@/components/ui";
+import { useState } from "react";
+import { CheckCheckIcon, ChevronRightIcon, ClockIcon, CoinIcon } from "@/components/icons";
+import { CommunityChip, ErrorNote, Segmented, Skeleton } from "@/components/ui";
 import { useModQueue } from "@/hooks/use-me";
 import { useCancelMarket, useResolveMarket } from "@/hooks/use-markets";
-import { formatTimeLeft } from "@/lib/format";
+import { formatPoints, formatTimeLeft, outcomeColor } from "@/lib/format";
 import type { MarketSummary } from "@/types";
 
-function PendingRow({ market }: { market: MarketSummary }) {
+type Tab = "pending" | "active";
+
+function PendingCard({ market }: { market: MarketSummary }) {
   const resolve = useResolveMarket(market.id);
   const cancel = useCancelMarket(market.id);
   const busy = resolve.isPending || cancel.isPending;
 
   return (
-    <div className="flex flex-col gap-2 rounded-[14px] border-[1.5px] border-brand bg-brand-soft p-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-[11px] font-semibold text-brand-dark">{market.communityName}</div>
-          <Link href={`/markets/${market.id}`} className="text-[15px] font-extrabold hover:text-brand">
-            {market.title}
-          </Link>
-        </div>
+    <article className="flex flex-col gap-4 rounded-[20px] border border-line bg-surface p-5">
+      <div className="flex items-center justify-between gap-3">
+        <CommunityChip name={market.communityName} visibility={market.communityVisibility} />
+        <span className="flex flex-none items-center gap-1.5 text-xs text-muted">
+          <CoinIcon size={13} /> {formatPoints(market.totalPool)} at stake
+        </span>
+      </div>
+      <Link href={`/markets/${market.id}`} className="text-lg leading-snug font-bold tracking-tight hover:text-lime">
+        {market.title}
+      </Link>
+      <div>
+        <div className="mb-2.5 text-xs font-semibold tracking-[0.08em] text-faint uppercase">Pick the winning outcome</div>
         <div className="flex flex-wrap gap-2">
-          {market.options.map((o) => (
+          {market.options.map((o, i) => (
             <button key={o.id} disabled={busy}
               onClick={() => confirm(`Resolve as "${o.text}"? This pays out immediately.`) && resolve.mutate({ winningOptionId: o.id })}
-              className="cursor-pointer rounded-2xl bg-ink px-3.5 py-2 text-xs font-bold text-white hover:bg-ink/85 disabled:opacity-50">
+              className="flex cursor-pointer items-center gap-2 rounded-full bg-raised px-4 py-2.5 text-sm font-semibold hover:bg-line disabled:opacity-45">
+              <span className="size-2.5 rounded-full" style={{ background: outcomeColor(market.marketType, i) }} />
               {o.text}
             </button>
           ))}
           <button disabled={busy}
             onClick={() => confirm("Nullify this market and refund every bet?") && cancel.mutate({})}
-            className="cursor-pointer rounded-2xl border-[1.5px] border-no bg-white px-3.5 py-2 text-xs font-bold text-brand-dark disabled:opacity-50">
+            className="cursor-pointer rounded-full border border-no/60 px-4 py-2.5 text-sm font-semibold text-no hover:bg-no/10 disabled:opacity-45">
             Nullify
           </button>
         </div>
       </div>
       <ErrorNote error={resolve.error ?? cancel.error} />
+    </article>
+  );
+}
+
+function ActiveRow({ market }: { market: MarketSummary }) {
+  return (
+    <Link href={`/markets/${market.id}`}
+      className="flex items-center gap-4 rounded-[18px] border border-line bg-surface p-4 transition-colors hover:border-faint/60">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <span className="font-semibold">{market.title}</span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+          <CommunityChip name={market.communityName} visibility={market.communityVisibility} />
+          <span className="flex items-center gap-1.5"><ClockIcon size={13} />{formatTimeLeft(market.deadline, market.status)}</span>
+        </span>
+      </div>
+      <ChevronRightIcon size={18} className="flex-none text-lime" />
+    </Link>
+  );
+}
+
+function CaughtUp({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="flex flex-col items-center px-4 py-14 text-center">
+      <div className="flex size-[88px] items-center justify-center rounded-[22px] bg-lime/15">
+        <CheckCheckIcon size={30} className="text-lime" />
+      </div>
+      <p className="mt-6 text-2xl font-bold tracking-tight">{title}</p>
+      <p className="mt-2.5 max-w-[340px] text-[15px] leading-relaxed text-muted">{body}</p>
+      <Link href="/communities"
+        className="mt-6 flex items-center gap-2 rounded-2xl border border-lime/40 px-6 py-3.5 text-[15px] font-semibold text-lime hover:bg-lime/10">
+        Back to your communities <span aria-hidden>→</span>
+      </Link>
     </div>
   );
 }
 
 export default function ModQueuePage() {
   const { data, isLoading } = useModQueue();
+  const [tab, setTab] = useState<Tab>("pending");
+  const pending = data?.pending ?? [];
+  const active = data?.active ?? [];
 
   return (
-    <div className="mx-auto flex max-w-[800px] flex-col gap-6 px-4 pt-7 pb-16 sm:px-8">
-      <div>
-        <h1 className="text-2xl font-extrabold">Mod Queue</h1>
-        <p className="mt-1 text-[13px] font-semibold text-muted">Markets you&apos;re the assigned moderator for.</p>
-      </div>
+    <div className="mx-auto flex max-w-[760px] flex-col gap-6 px-4 pt-7 pb-16 sm:px-6">
+      <header>
+        <h1 className="text-[32px] leading-tight font-bold tracking-tight sm:text-[40px]">Mod queue</h1>
+        <p className="mt-1 text-[15px] text-muted">Your markets. Your call.</p>
+      </header>
 
-      <section>
-        <h2 className="mb-2.5 text-sm font-extrabold text-brand-dark">Needs resolution</h2>
-        <div className="flex flex-col gap-2.5">
-          {isLoading && <Skeleton className="h-20" />}
-          {data?.pending.map((m) => <PendingRow key={m.id} market={m} />)}
-          {data && data.pending.length === 0 && (
-            <p className="text-[13px] font-semibold text-faint">Nothing waiting on you — nice.</p>
-          )}
-        </div>
-      </section>
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "pending", label: `Needs resolution${pending.length ? ` · ${pending.length}` : ""}`, ariaLabel: "Needs resolution" },
+          { value: "active", label: `Active markets${active.length ? ` · ${active.length}` : ""}`, ariaLabel: "Active markets" },
+        ]}
+      />
 
-      <section>
-        <h2 className="mb-2.5 text-sm font-extrabold text-muted">Active — you moderate</h2>
-        <div className="flex flex-col gap-2">
-          {data?.active.map((m) => (
-            <Link key={m.id} href={`/markets/${m.id}`}
-              className="flex justify-between gap-3 rounded-[14px] border border-line bg-white px-4 py-3.5 hover:bg-ink/3">
-              <span className="text-[13px] font-bold">{m.title}</span>
-              <span className="flex-none text-xs font-semibold text-faint">{formatTimeLeft(m.deadline, m.status)}</span>
-            </Link>
-          ))}
-          {data && data.active.length === 0 && (
-            <p className="text-[13px] font-semibold text-faint">No open markets to watch.</p>
+      {isLoading ? (
+        <Skeleton className="h-40" />
+      ) : tab === "pending" ? (
+        <section aria-label="Needs resolution" className="flex flex-col gap-3">
+          {pending.map((m) => <PendingCard key={m.id} market={m} />)}
+          {data && pending.length === 0 && (
+            <CaughtUp title="All caught up."
+              body="No predictions need your decision right now. Enjoy the peace while it lasts." />
           )}
-        </div>
-      </section>
+        </section>
+      ) : (
+        <section aria-label="Active markets" className="flex flex-col gap-2.5">
+          {active.map((m) => <ActiveRow key={m.id} market={m} />)}
+          {data && active.length === 0 && (
+            <CaughtUp title="Nothing live."
+              body="None of the markets you moderate are open right now. Start one and let the debates begin." />
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -23,14 +23,14 @@ function OutcomeFields({ value, onChange }: { value: string[]; onChange: (outcom
           />
           <button type="button" aria-label={`Remove outcome ${i + 1}`} disabled={value.length <= 2}
             onClick={() => onChange(value.filter((_, j) => j !== i))}
-            className="flex size-[38px] flex-none cursor-pointer items-center justify-center rounded-[10px] bg-no/10 text-sm font-extrabold text-no disabled:cursor-not-allowed disabled:opacity-40">
+            className="flex size-[42px] flex-none cursor-pointer items-center justify-center rounded-xl bg-no/12 text-sm font-bold text-no disabled:cursor-not-allowed disabled:opacity-40">
             ×
           </button>
         </div>
       ))}
       {value.length < 10 && (
         <button type="button" onClick={() => onChange([...value, ""])}
-          className="mt-1 w-fit cursor-pointer text-[13px] font-bold text-brand">
+          className="mt-1 w-fit cursor-pointer text-[13px] font-semibold text-lime hover:text-lime-hover">
           + Add outcome
         </button>
       )}
@@ -80,7 +80,7 @@ export function CreateMarketForm({ initialCommunityId }: { initialCommunityId?: 
       <form onSubmit={submit} className="flex flex-col gap-[18px] p-6">
         <Field label="Community">
           <select value={communityId ?? ""} onChange={(e) => { setCommunityId(Number(e.target.value)); setModeratorId(undefined); }}
-            className={`${inputClass} font-bold`}>
+            className={`${inputClass} font-semibold`}>
             {communities?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
@@ -89,7 +89,7 @@ export function CreateMarketForm({ initialCommunityId }: { initialCommunityId?: 
             placeholder="e.g. Will it snow before Nov 1?" className={inputClass} />
         </Field>
         <div className="flex flex-col gap-2">
-          <span className="text-[13px] font-bold">Outcome type</span>
+          <span className="text-[13px] font-semibold">Outcome type</span>
           <Segmented
             value={marketType}
             onChange={setMarketType}
@@ -113,19 +113,19 @@ export function CreateMarketForm({ initialCommunityId }: { initialCommunityId?: 
           <Field label="Choose a moderator for this market"
             hint="This moderator can validate or nullify this specific market.">
             <select value={moderatorId ?? me?.id ?? ""} onChange={(e) => setModeratorId(Number(e.target.value))}
-              className={`${inputClass} font-bold`}>
+              className={`${inputClass} font-semibold`}>
               {members?.map((m) => <option key={m.user.id} value={m.user.id}>{m.user.username}</option>)}
             </select>
           </Field>
         ) : community ? (
-          <p className="rounded-[10px] bg-canvas p-3 text-xs font-semibold text-faint">
+          <p className="rounded-xl bg-raised p-3 text-xs leading-normal text-muted">
             Moderated by <strong>{community.moderators.map((m) => m.username).join(", ")}</strong> — the
             community&apos;s moderators handle validation for all its markets.
           </p>
         ) : null}
 
         <ErrorNote error={fieldErrors ? null : create.error} />
-        <Button type="submit" disabled={!communityId || create.isPending} className="py-3 text-sm font-extrabold">
+        <Button type="submit" disabled={!communityId || create.isPending} className="rounded-2xl py-3.5 text-[15px]">
           {create.isPending ? "Creating…" : "Create market"}
         </Button>
       </form>

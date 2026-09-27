@@ -1,12 +1,17 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { ArrowUpRightIcon, CheckIcon, ClockIcon, CoinIcon, UsersIcon } from "@/components/icons";
 import { ProbabilityChart } from "@/components/probability-chart";
-import { BackLink, Button, Card, ErrorNote, Skeleton, cn } from "@/components/ui";
+import { WinningCard } from "@/components/winning-card";
+import { Avatar, BackLink, Button, Card, CommunityChip, ErrorNote, ProbabilityBar, Skeleton, StatusPill, cn } from "@/components/ui";
 import { useCancelMarket, useMarket, useMarketActivity, usePlacePosition, useResolveMarket } from "@/hooks/use-markets";
-import { formatPercent, formatPoints, formatRelative, formatTimeLeft } from "@/lib/format";
+import { useMe } from "@/hooks/use-me";
+import { formatPercent, formatPoints, formatRelative, formatTimeLeft, outcomeColor } from "@/lib/format";
 import type { ID, MarketDetail } from "@/types";
+
+const QUICK_ADDS = [25, 50, 100];
 
 function ModeratorPanel({ market }: { market: MarketDetail }) {
   const resolve = useResolveMarket(market.id);
@@ -14,15 +19,15 @@ function ModeratorPanel({ market }: { market: MarketDetail }) {
   const busy = resolve.isPending || cancel.isPending;
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border-[1.5px] border-brand bg-brand-soft px-5 py-[18px]">
-      <div className="text-sm font-extrabold text-brand-dark">This market has ended — you&apos;re the moderator</div>
-      <p className="text-[13px] font-semibold text-muted">
+    <div className="flex flex-col gap-3 rounded-[20px] border-2 border-lime/80 bg-lime/[0.06] p-5">
+      <div className="text-base font-bold text-lime">This market has ended — you&apos;re the moderator</div>
+      <p className="text-sm text-muted">
         Validate the correct outcome, or nullify the market if it can&apos;t be resolved fairly. Bets settle
         immediately once you act.
       </p>
       <div className="flex flex-wrap gap-2.5">
         {market.options.map((o) => (
-          <Button key={o.id} variant="dark" disabled={busy}
+          <Button key={o.id} disabled={busy}
             onClick={() => confirm(`Resolve as "${o.text}"? This pays out immediately.`) && resolve.mutate({ winningOptionId: o.id })}>
             Validate: {o.text}
           </Button>
@@ -38,114 +43,202 @@ function ModeratorPanel({ market }: { market: MarketDetail }) {
 }
 
 function ResolvedBanner({ market }: { market: MarketDetail }) {
-  const text =
-    market.status === "CANCELLED"
-      ? "This market was nullified — all bets refunded."
-      : `Resolved: ${market.options.find((o) => o.id === market.settlement?.winningOptionId)?.text} — payouts settled.`;
+  const cancelled = market.status === "CANCELLED";
+  const text = cancelled
+    ? "This market was nullified — all bets refunded."
+    : `Resolved: ${market.options.find((o) => o.id === market.settlement?.winningOptionId)?.text} — payouts settled.`;
   return (
-    <div className="rounded-2xl border-[1.5px] border-yes bg-yes/10 px-5 py-4 text-sm font-extrabold text-yes-dark">
+    <div className={cn("rounded-2xl border px-5 py-4 text-sm font-semibold",
+      cancelled ? "border-line bg-raised text-muted" : "border-live/40 bg-live/10 text-live")}>
       {text}
     </div>
   );
 }
 
-function OutcomePicker({ market, selected, onSelect }: { market: MarketDetail; selected: ID | null; onSelect: (id: ID) => void }) {
-  const disabled = !market.permissions.canBet;
-
-  if (market.marketType === "BINARY") {
-    const [yes, no] = market.options;
-    const side = (option: typeof yes, isYes: boolean) => (
-      <button
-        key={option.id}
-        disabled={disabled}
-        onClick={() => onSelect(option.id)}
-        aria-pressed={selected === option.id}
-        className={cn(
-          "flex flex-1 cursor-pointer flex-col gap-1 rounded-[14px] border-[1.5px] p-4 text-left transition-colors disabled:cursor-not-allowed",
-          isYes ? "border-yes bg-yes/8 hover:bg-yes/15" : "border-no bg-no/6 hover:bg-no/12",
-          selected === option.id && (isYes ? "bg-yes/20 ring-2 ring-yes" : "bg-no/15 ring-2 ring-no"),
-        )}
-      >
-        <span className={cn("text-xs font-extrabold", isYes ? "text-yes" : "text-no")}>{option.text.toUpperCase()}</span>
-        <span className="text-[26px] font-extrabold">{formatPercent(option.probability)}</span>
-        <span className={cn("text-xs font-bold", isYes ? "text-yes-dark" : "text-brand-dark")}>Buy {option.text}</span>
-      </button>
+/** Personal result once a market you bet on is resolved. */
+function MyResult({ market }: { market: MarketDetail }) {
+  if (market.status !== "RESOLVED" || !market.myStake) return null;
+  const option = market.options.find((o) => o.id === market.myStake!.optionId)!;
+  if (market.settlement?.winningOptionId === option.id) {
+    return (
+      <WinningCard question={market.title} prediction={option.text}
+        points={market.myStake.potentialPayout - market.myStake.amount} />
     );
-    return <div className="flex gap-3">{side(yes, true)}{side(no, false)}</div>;
   }
-
-  const rows = [...market.options].sort((a, b) => b.probability - a.probability);
   return (
-    <div className="flex flex-col gap-2.5">
-      {rows.map((o) => (
-        <button
-          key={o.id}
-          disabled={disabled}
-          onClick={() => onSelect(o.id)}
-          aria-pressed={selected === o.id}
-          className={cn(
-            "flex cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-left hover:bg-ink/3 disabled:cursor-not-allowed",
-            selected === o.id ? "border-brand bg-brand-soft" : "border-line",
-          )}
-        >
-          <span className="flex-1 text-[13px] font-bold">{o.text}</span>
-          <span className="h-2 flex-[2] overflow-hidden rounded-[5px] bg-ink/7">
-            <span className="block h-full rounded-[5px] bg-brand" style={{ width: formatPercent(o.probability) }} />
-          </span>
-          <span className="w-10 text-right text-[13px] font-extrabold">{formatPercent(o.probability)}</span>
-          <span className={cn("rounded-2xl px-3 py-1.5 text-xs font-bold text-white", selected === o.id ? "bg-brand" : "bg-ink")}>
-            {selected === o.id ? "Selected" : "Bet"}
-          </span>
-        </button>
-      ))}
-    </div>
+    <Card className="flex flex-col gap-1 p-5">
+      <div className="text-xs font-semibold tracking-[0.08em] text-faint uppercase">Prediction resolved</div>
+      <div className="text-xl font-bold">Not this time.</div>
+      <p className="text-sm text-muted">
+        You backed {option.text} with {market.myStake.amount} pts. The receipts will come.
+      </p>
+    </Card>
   );
 }
 
-function BetForm({ market }: { market: MarketDetail }) {
-  const place = usePlacePosition(market.id);
-  // Default to the side the user already backed; they can only add to it.
-  const [selected, setSelected] = useState<ID | null>(market.myStake?.optionId ?? null);
-  const [amount, setAmount] = useState("");
-  const selectedOption = market.options.find((o) => o.id === selected);
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selected) return;
-    place.mutate({ optionId: selected, amount: Number(amount) }, { onSuccess: () => setAmount("") });
-  };
+function OutcomePicker({ market, selected, onSelect }: { market: MarketDetail; selected: ID | null; onSelect: (id: ID) => void }) {
+  const disabled = !market.permissions.canBet;
+  const isBinary = market.marketType === "BINARY";
+  const rows = market.options.map((option, index) => ({ option, color: outcomeColor(market.marketType, index) }));
+  if (!isBinary) rows.sort((a, b) => b.option.probability - a.option.probability);
 
   return (
-    <>
-      <OutcomePicker market={market} selected={selected} onSelect={setSelected} />
-      {market.permissions.canBet && (
-        <form onSubmit={submit} className="flex flex-col gap-2 rounded-xl bg-canvas px-3.5 py-3">
-          <div className="flex items-center gap-2.5">
-            <input
-              type="number"
-              min={1}
-              step={1}
-              inputMode="numeric"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={selectedOption ? `Points on ${selectedOption.text}` : "Pick an outcome, then wager"}
-              aria-label="Points to wager"
-              className="min-w-0 flex-1 rounded-[10px] border border-ink/15 bg-white px-3 py-2 text-[13px] font-bold outline-none focus:border-brand"
-            />
-            <Button type="submit" className="rounded-[10px] px-[18px] font-extrabold whitespace-nowrap"
-              disabled={!selected || !amount || place.isPending}>
-              {place.isPending ? "Placing…" : "Place bet"}
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-bold tracking-tight">{disabled ? "Outcomes" : "Choose your prediction"}</h2>
+      {rows.map(({ option, color }) => {
+        const isSelected = selected === option.id;
+        const isMine = market.myStake?.optionId === option.id;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(option.id)}
+            aria-pressed={isSelected}
+            className={cn(
+              "flex flex-col gap-3 rounded-[18px] border bg-surface p-4 text-left transition-colors sm:px-5",
+              disabled ? "cursor-default" : "cursor-pointer hover:bg-raised",
+              isSelected ? "border-lime bg-raised ring-1 ring-lime" : "border-line",
+            )}
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="size-3 flex-none rounded-full" style={{ background: color }} />
+                <span className="truncate text-lg font-semibold">{isBinary ? option.text.toUpperCase() : option.text}</span>
+                {option.isWinner && <CheckIcon size={18} className="flex-none text-live" />}
+              </span>
+              <span className="text-2xl font-bold tabular-nums" style={{ color }}>{formatPercent(option.probability)}</span>
+            </span>
+            <ProbabilityBar value={option.probability} color={color} />
+            {isSelected && !disabled ? (
+              <span className="flex items-center gap-1.5 text-xs font-bold tracking-[0.06em] text-lime uppercase">
+                <CheckIcon size={14} strokeWidth={3} /> Your selected outcome
+              </span>
+            ) : isMine ? (
+              <span className="text-xs font-semibold tracking-[0.06em] text-muted uppercase">
+                Your stake · {market.myStake!.amount} pts
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
+function StakePanel({ market, selected }: { market: MarketDetail; selected: ID | null }) {
+  const place = usePlacePosition(market.id);
+  const { data: me } = useMe();
+  const [amount, setAmount] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const balance = me?.balance ?? 0;
+  const selectedOption = market.options.find((o) => o.id === selected);
+
+  const value = Number(amount);
+  const hasAmount = amount !== "" && Number.isInteger(value) && value >= 1;
+  const overBalance = hasAmount && me !== undefined && value > balance;
+  const canSubmit = Boolean(selectedOption) && hasAmount && !overBalance && !place.isPending;
+
+  // Parimutuel estimate at current odds, matching how the backend pays winners.
+  const estimate = selectedOption && hasAmount
+    ? Math.floor(
+        ((market.myStake?.optionId === selectedOption.id ? market.myStake.amount : 0) + value) *
+          (market.totalPool + value) / (selectedOption.totalAmount + value),
+      )
+    : 0;
+
+  const setStake = (next: number) => {
+    setConfirming(false);
+    place.reset();
+    setAmount(String(Math.max(0, Math.min(next, balance || next))));
+  };
+
+  const submit = () => {
+    if (!selectedOption || !canSubmit) return;
+    place.mutate({ optionId: selectedOption.id, amount: value }, {
+      onSuccess: () => setAmount(""),
+      onSettled: () => setConfirming(false),
+    });
+  };
+
+  const label = !selectedOption
+    ? "Pick an outcome first"
+    : hasAmount
+      ? `Stake ${value.toLocaleString()} point${value === 1 ? "" : "s"}`
+      : "Enter your stake";
+
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      <h2 className="text-lg font-bold tracking-tight">Stake your points</h2>
+      <label className="flex items-center gap-3 rounded-2xl border border-transparent bg-raised px-5 py-4 focus-within:border-lime/70">
+        <input
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => {
+            setAmount(e.target.value);
+            setConfirming(false);
+            place.reset();
+          }}
+          placeholder="0"
+          aria-label="Points to wager"
+          className="w-full min-w-0 bg-transparent text-3xl font-semibold tabular-nums outline-none placeholder:text-faint"
+        />
+        <span className="text-lg font-bold text-lime">PTS</span>
+      </label>
+      <div className="grid grid-cols-4 gap-2">
+        {QUICK_ADDS.map((n) => (
+          <button key={n} type="button" onClick={() => setStake((hasAmount ? value : 0) + n)}
+            className="cursor-pointer rounded-xl bg-raised py-2.5 text-sm font-semibold hover:bg-line">
+            +{n}
+          </button>
+        ))}
+        <button type="button" onClick={() => setStake(balance)} disabled={!balance}
+          className="cursor-pointer rounded-xl bg-raised py-2.5 text-sm font-semibold hover:bg-line disabled:opacity-45">
+          MAX
+        </button>
+      </div>
+      <div className="flex justify-between text-sm">
+        <span className="text-muted">Available balance</span>
+        <span className={cn("font-semibold tabular-nums", overBalance && "text-no")}>{balance.toLocaleString()} pts</span>
+      </div>
+      {overBalance && <p className="text-xs font-semibold text-no">That&apos;s more than your balance.</p>}
+
+      {confirming && selectedOption ? (
+        <div className="flex flex-col gap-3 rounded-2xl border border-lime/50 bg-lime/[0.06] p-4">
+          <div>
+            <div className="font-semibold">Stake {value.toLocaleString()} pts on {selectedOption.text}?</div>
+            <div className="mt-0.5 text-sm text-muted">
+              If it wins you&apos;d get about {estimate.toLocaleString()} pts back at current odds.
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button className="flex-1 rounded-xl py-3 text-sm" onClick={submit} disabled={!canSubmit}>
+              {place.isPending ? "Staking…" : "Confirm stake"}
+            </Button>
+            <Button variant="secondary" className="rounded-xl px-5 py-3 text-sm" onClick={() => setConfirming(false)}
+              disabled={place.isPending}>
+              Back
             </Button>
           </div>
-          <ErrorNote error={place.error} />
-          {place.isSuccess && (
-            <p className="text-xs font-bold text-yes-dark">
-              Bet placed — {place.data.position.amount} pts on {place.data.position.optionText}.
-            </p>
-          )}
-        </form>
+        </div>
+      ) : (
+        <Button className="flex items-center justify-center gap-1.5 rounded-2xl py-4 text-base" disabled={!canSubmit}
+          onClick={() => setConfirming(true)}>
+          {label} {canSubmit && <ArrowUpRightIcon size={18} />}
+        </Button>
       )}
-    </>
+
+      <ErrorNote error={place.error} />
+      {place.isSuccess && (
+        <p className="text-sm font-semibold text-live">
+          Staked {place.data.position.amount} pts on {place.data.position.optionText}.
+        </p>
+      )}
+      <p className="text-center text-xs text-faint">Virtual points only · No real-money wagering</p>
+    </Card>
   );
 }
 
@@ -153,25 +246,99 @@ function RecentActivity({ marketId }: { marketId: ID }) {
   const { data } = useMarketActivity(marketId);
   if (!data?.items.length) return null;
   return (
-    <div>
-      <div className="mb-2 text-[13px] font-extrabold text-muted">Recent activity</div>
-      <div className="flex flex-col gap-2">
+    <Card className="flex flex-col gap-3 p-5">
+      <h2 className="text-lg font-bold tracking-tight">Recent activity</h2>
+      <div className="flex flex-col">
         {data.items.slice(0, 8).map((a) => (
-          <div key={a.id} className="flex justify-between border-b border-ink/6 pb-1.5 text-xs font-semibold text-muted">
-            <span>{a.user.username} bet {a.amount} pts on {a.optionText}</span>
-            <span className="text-faint">{formatRelative(a.createdAt)}</span>
+          <div key={a.id} className="flex items-center gap-3 border-b border-line py-2.5 text-sm last:border-b-0">
+            <Avatar id={a.user.id} name={a.user.username} size={28} rounded="rounded-full" />
+            <span className="min-w-0 flex-1 text-muted">{a.user.username} bet {a.amount} pts on {a.optionText}</span>
+            <span className="flex-none text-xs text-faint">{formatRelative(a.createdAt)}</span>
           </div>
         ))}
       </div>
+    </Card>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-muted">{label}</span>
+      <span className="text-right font-medium">{value}</span>
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function MarketInfo({ market }: { market: MarketDetail }) {
+  const myOption = market.options.find((o) => o.id === market.myStake?.optionId);
   return (
-    <div className="flex justify-between gap-3">
-      <span className="text-faint">{label}</span>
-      <span className="text-right">{value}</span>
+    <Card className="flex flex-col gap-3.5 p-5">
+      <h2 className="text-lg font-bold tracking-tight">Market info</h2>
+      <div className="flex flex-col gap-2.5 text-sm">
+        <InfoRow label="Volume" value={formatPoints(market.totalPool)} />
+        <InfoRow label="Closes" value={new Date(market.deadline).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} />
+        <InfoRow label="Moderator" value={market.moderator.username} />
+        <InfoRow label="Created by" value={market.creator.username} />
+        {market.myStake && myOption && (
+          <>
+            <InfoRow label="Your stake" value={`${market.myStake.amount} pts on ${myOption.text}`} />
+            <InfoRow label="If it wins" value={`${market.myStake.potentialPayout.toLocaleString()} pts`} />
+          </>
+        )}
+      </div>
+      <p className="rounded-xl bg-raised p-3 text-xs leading-normal text-muted">
+        Resolution rule: the assigned moderator validates the real-world outcome once the market closes. Bets
+        pay out automatically based on their call, or are refunded if nullified.
+      </p>
+    </Card>
+  );
+}
+
+function MarketView({ market }: { market: MarketDetail }) {
+  // Default to the side the user already backed; they can only add to it.
+  const [selected, setSelected] = useState<ID | null>(market.myStake?.optionId ?? null);
+  const settled = market.status === "RESOLVED" || market.status === "CANCELLED";
+
+  return (
+    <div className="mx-auto flex max-w-[1180px] flex-col gap-5 px-4 pt-6 pb-16 sm:px-6">
+      <BackLink href={`/communities/${market.communityId}`}>Back to {market.communityName}</BackLink>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-7">
+        <div className="flex min-w-0 flex-col gap-5">
+          <header className="flex flex-col gap-3 border-b border-line pb-6">
+            <div className="flex items-center justify-between gap-3">
+              <CommunityChip name={market.communityName} visibility={market.communityVisibility} />
+              {market.status === "OPEN" ? <StatusPill tone="live">Live</StatusPill>
+                : market.status === "LOCKED" ? <StatusPill tone="muted">Closed</StatusPill>
+                : market.status === "CANCELLED" ? <StatusPill tone="no">Nullified</StatusPill>
+                : <StatusPill tone="muted">Resolved</StatusPill>}
+            </div>
+            <h1 className="text-[28px] leading-tight font-bold tracking-tight sm:text-4xl">{market.title}</h1>
+            {market.description && <p className="text-[15px] leading-normal text-muted">{market.description}</p>}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-muted">
+              <span className="flex items-center gap-1.5"><ClockIcon size={15} />{formatTimeLeft(market.deadline, market.status)}</span>
+              <span className="flex items-center gap-1.5"><CoinIcon size={14} />{formatPoints(market.totalPool)}</span>
+              <span className="flex items-center gap-1.5"><UsersIcon size={15} />{market.participantCount} predicting</span>
+            </div>
+          </header>
+
+          {market.permissions.canResolve && <ModeratorPanel market={market} />}
+          {settled && <ResolvedBanner market={market} />}
+          <MyResult market={market} />
+          <OutcomePicker market={market} selected={selected} onSelect={setSelected} />
+        </div>
+
+        <aside className="flex flex-col gap-5 lg:sticky lg:top-24 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+          {market.permissions.canBet && <StakePanel market={market} selected={selected} />}
+          <MarketInfo market={market} />
+        </aside>
+
+        <div className="flex min-w-0 flex-col gap-5">
+          <ProbabilityChart options={market.options} history={market.history} marketType={market.marketType} />
+          <RecentActivity marketId={market.id} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -181,63 +348,10 @@ export default function MarketPage() {
   const { data: market, error, isLoading } = useMarket(marketId);
 
   if (isLoading) {
-    return <div className="mx-auto max-w-[1000px] px-4 pt-7 sm:px-8"><Skeleton className="h-96" /></div>;
+    return <div className="mx-auto max-w-[1180px] px-4 pt-7 sm:px-6"><Skeleton className="h-96" /></div>;
   }
   if (!market) {
-    return <div className="mx-auto max-w-[1000px] px-4 pt-7 sm:px-8"><ErrorNote error={error} /></div>;
+    return <div className="mx-auto max-w-[1180px] px-4 pt-7 sm:px-6"><ErrorNote error={error} /></div>;
   }
-
-  const isPrivate = market.communityVisibility === "PRIVATE";
-  const myOption = market.options.find((o) => o.id === market.myStake?.optionId);
-
-  return (
-    <div className="mx-auto flex max-w-[1000px] flex-col gap-5 px-4 pt-7 pb-16 sm:px-8">
-      <BackLink href={`/communities/${market.communityId}`}>Back to {market.communityName}</BackLink>
-
-      {market.permissions.canResolve && <ModeratorPanel market={market} />}
-      {(market.status === "RESOLVED" || market.status === "CANCELLED") && <ResolvedBanner market={market} />}
-
-      <Card className="grid gap-7 p-6 md:grid-cols-[1.6fr_1fr]">
-        <div className="flex min-w-0 flex-col gap-[18px]">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <span className={cn("rounded-[14px] px-2.5 py-1 text-[11px] font-bold",
-                isPrivate ? "bg-private/12 text-private" : "bg-yes/12 text-yes")}>
-                {market.communityName}
-              </span>
-              <span className="text-xs font-bold text-faint">{formatTimeLeft(market.deadline, market.status)}</span>
-            </div>
-            <h1 className="text-[22px] leading-tight font-extrabold">{market.title}</h1>
-            {market.description && (
-              <p className="mt-2 text-[13px] leading-normal font-semibold text-muted">{market.description}</p>
-            )}
-          </div>
-
-          <ProbabilityChart options={market.options} history={market.history} />
-          <BetForm key={market.id} market={market} />
-          <RecentActivity marketId={market.id} />
-        </div>
-
-        <aside className="flex flex-col gap-3.5 border-line md:border-l md:pl-6">
-          <div className="text-[13px] font-extrabold text-muted">Market info</div>
-          <div className="flex flex-col gap-2.5 text-[13px] font-semibold">
-            <InfoRow label="Volume" value={formatPoints(market.totalPool)} />
-            <InfoRow label="Closes" value={new Date(market.deadline).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} />
-            <InfoRow label="Moderator" value={market.moderator.username} />
-            <InfoRow label="Created by" value={market.creator.username} />
-            {market.myStake && myOption && (
-              <>
-                <InfoRow label="Your stake" value={`${market.myStake.amount} pts on ${myOption.text}`} />
-                <InfoRow label="If it wins" value={`${market.myStake.potentialPayout.toLocaleString()} pts`} />
-              </>
-            )}
-          </div>
-          <p className="rounded-[10px] bg-canvas p-3 text-xs leading-normal font-semibold text-faint">
-            Resolution rule: the assigned moderator validates the real-world outcome once the market closes. Bets
-            pay out automatically based on their call, or are refunded if nullified.
-          </p>
-        </aside>
-      </Card>
-    </div>
-  );
+  return <MarketView key={market.id} market={market} />;
 }
