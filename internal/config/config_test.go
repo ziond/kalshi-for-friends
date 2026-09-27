@@ -4,9 +4,11 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -181,5 +183,63 @@ func TestWAL11DailyBonusSettings(t *testing.T) {
 			}
 		}
 		t.Setenv(name, "")
+	}
+}
+
+// Hosts like Vercel have no key files: the PEMs come from env vars, in any of
+// the forms people paste them, and the public key can be left out entirely.
+func TestAUTH15KeysFromEnvironmentOnly(t *testing.T) {
+	setupConfig(t)
+	t.Setenv("DB_PASSWORD", "test")
+	t.Chdir(t.TempDir()) // no private.pem / public.pem here
+	t.Setenv("JWT_PRIVATE_KEY_FILE", "")
+
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privatePEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	publicDER, err := x509.MarshalPKIXPublicKey(key.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}))
+
+	for name, value := range map[string]string{
+		"multi-line": privatePEM,
+		"escaped \n": strings.ReplaceAll(privatePEM, "\n", `\n`),
+		"base64":     base64.StdEncoding.EncodeToString([]byte(privatePEM)),
+		"quoted":     `"` + privatePEM + `"`,
+	} {
+		t.Setenv("JWT_PRIVATE_KEY", value)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("%s private key: %v", name, err)
+		}
+		if !cfg.JWTPrivateKey.Equal(key) || !cfg.JWTPublicKey.Equal(key.Public()) {
+			t.Fatalf("%s: wrong keys loaded (public key should be derived)", name)
+		}
+	}
+
+	t.Setenv("JWT_PUBLIC_KEY", base64.StdEncoding.EncodeToString([]byte(publicPEM)))
+	if _, err := Load(); err != nil {
+		t.Fatalf("base64 public key: %v", err)
+	}
+	t.Setenv("JWT_PUBLIC_KEY", "")
+
+	// A file named explicitly must exist; only the default files are optional.
+	t.Setenv("JWT_PUBLIC_KEY_FILE", "missing.pem")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "JWT_PUBLIC_KEY_FILE") {
+		t.Fatalf("missing explicit public key file: %v", err)
+	}
+	t.Setenv("JWT_PUBLIC_KEY_FILE", "")
+
+	t.Setenv("JWT_PRIVATE_KEY", "")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "JWT_PRIVATE_KEY") {
+		t.Fatalf("no private key anywhere: %v", err)
 	}
 }

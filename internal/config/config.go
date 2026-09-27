@@ -5,6 +5,7 @@ package config
 import (
 	"crypto/ed25519"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -76,30 +77,33 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 	}
-	keyText := os.Getenv("JWT_PRIVATE_KEY")
-	if keyText == "" {
-		keyData, readErr := os.ReadFile(getEnv("JWT_PRIVATE_KEY_FILE", "private.pem"))
-		if readErr != nil {
-			return nil, errors.New("config: set JWT_PRIVATE_KEY or create the JWT_PRIVATE_KEY_FILE")
-		}
-		keyText = string(keyData)
+	// Keys come from env vars first (for hosts without key files, e.g.
+	// Vercel), then from files. See normalizePEM for accepted formats.
+	keyText, found, err := keyFromEnvOrFile("JWT_PRIVATE_KEY", "JWT_PRIVATE_KEY_FILE", "private.pem")
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errors.New("config: set JWT_PRIVATE_KEY, or create private.pem (or the file named by JWT_PRIVATE_KEY_FILE)")
 	}
 	key, err := ParseEd25519PrivateKey(keyText)
 	if err != nil {
 		return nil, fmt.Errorf("config: JWT_PRIVATE_KEY: %w", err)
 	}
 	cfg.JWTPrivateKey = key
-	publicText := os.Getenv("JWT_PUBLIC_KEY")
-	if publicText == "" {
-		data, err := os.ReadFile(getEnv("JWT_PUBLIC_KEY_FILE", "public.pem"))
+	var publicText string
+	publicText, found, err = keyFromEnvOrFile("JWT_PUBLIC_KEY", "JWT_PUBLIC_KEY_FILE", "public.pem")
+	switch {
+	case err != nil:
+		return nil, err
+	case !found:
+		// No public key configured anywhere: derive it from the private key.
+		cfg.JWTPublicKey = key.Public().(ed25519.PublicKey)
+	default:
+		cfg.JWTPublicKey, err = ParseEd25519PublicKey(publicText)
 		if err != nil {
-			return nil, errors.New("config: cannot read JWT_PUBLIC_KEY_FILE")
+			return nil, fmt.Errorf("config: JWT_PUBLIC_KEY: %w", err)
 		}
-		publicText = string(data)
-	}
-	cfg.JWTPublicKey, err = ParseEd25519PublicKey(publicText)
-	if err != nil {
-		return nil, fmt.Errorf("config: JWT_PUBLIC_KEY: %w", err)
 	}
 	if !key.Public().(ed25519.PublicKey).Equal(cfg.JWTPublicKey) {
 		return nil, errors.New("config: JWT public and private keys do not match")
@@ -171,11 +175,46 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// keyFromEnvOrFile returns the PEM text in envVar, or else the contents of the
+// file named by fileVar (default defaultFile). found is false only when
+// envVar is empty, fileVar is unset and defaultFile doesn't exist; a file
+// named explicitly in fileVar must be readable.
+func keyFromEnvOrFile(envVar, fileVar, defaultFile string) (text string, found bool, err error) {
+	if v := os.Getenv(envVar); v != "" {
+		return v, true, nil
+	}
+	path, explicit := os.Getenv(fileVar), true
+	if path == "" {
+		path, explicit = defaultFile, false
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return string(data), true, nil
+	}
+	if !explicit && os.IsNotExist(err) {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf("config: set %s, or make %s (%s) readable", envVar, fileVar, path)
+}
+
+// normalizePEM accepts a PEM as stored in a file or pasted into an env var:
+// real newlines, literal "\n" sequences (one-line .env values), wrapping
+// quotes, or the whole PEM base64-encoded (e.g. `base64 -w0 private.pem`).
+func normalizePEM(text string) string {
+	text = strings.Trim(strings.TrimSpace(text), `"'`)
+	if !strings.Contains(text, "-----BEGIN") {
+		if decoded, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(text), "")); err == nil {
+			text = string(decoded)
+		}
+	}
+	return strings.ReplaceAll(strings.TrimSpace(text), `\n`, "\n")
+}
+
 // ParseEd25519PrivateKey decodes a PKCS#8 PEM key, e.g. from
 // `openssl genpkey -algorithm ed25519`. Literal "\n" sequences are accepted
 // so the key fits on one line in an env file.
 func ParseEd25519PrivateKey(pemText string) (ed25519.PrivateKey, error) {
-	pemText = strings.ReplaceAll(strings.TrimSpace(pemText), `\n`, "\n")
+	pemText = normalizePEM(pemText)
 	if pemText == "" {
 		return nil, errors.New("required")
 	}
@@ -203,7 +242,7 @@ func getEnv(key, fallback string) string {
 
 // ParseEd25519PublicKey loads the SPKI PEM shared with the frontend.
 func ParseEd25519PublicKey(text string) (ed25519.PublicKey, error) {
-	block, rest := pem.Decode([]byte(strings.ReplaceAll(strings.TrimSpace(text), `\n`, "\n")))
+	block, rest := pem.Decode([]byte(normalizePEM(text)))
 	if block == nil || block.Type != "PUBLIC KEY" || len(strings.TrimSpace(string(rest))) != 0 {
 		return nil, errors.New("expected one SPKI PUBLIC KEY PEM block")
 	}
