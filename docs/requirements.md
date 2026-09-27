@@ -219,15 +219,16 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | COM-09 | Members can start a market from the community page. | Members see "+ New market", which opens the create form with this community pre-selected. Non-members don't see it. | Must | Built (mock) | `community.test` |
 | COM-10 | Non-members can join a public community from its page. | A non-member sees "Join community". Clicking it makes them a MEMBER, hides the button and shows "+ New market". | Must | Built (mock) | `community.test` |
 | COM-11 | Private communities are hidden from non-members. | Opening a private community (or any of its markets) as a non-member shows "This community is invite-only" and no content. The API returns 403 `FORBIDDEN`. | Must | Built (mock) | `market.test` |
-| COM-12 | The creator of a private community can share its invite link. | "Invite people" opens a dialog with the full link `<site>/invite/<code>`, a Copy button, and "Preview what invitees see". Escape or Close dismisses it. The link works when shared: it hasn't expired (INV-09). | Must | Partial — the dialog works, but links expire 15 minutes after the community is created and there's no UI to issue a new one (COM-17, open issue 23) | `community.test` |
+| COM-12 | The creator of a private community can share its invite link. | "Invite people" opens a dialog with the full link `<site>/invite/<code>`, a Copy button, and "Preview what invitees see". It says links work for 15 minutes and shows "Expires in m:ss" (COM-21). Once the link has expired it's struck through, Copy is disabled, the preview link is hidden and the dialog says "This link has expired." Escape or Close dismisses it. | Must | Built (mock) | `community.test` |
 | COM-13 | Only creators and moderators see the invite code. | Members get `inviteCode: null` from the API and don't see "Invite people". | Must | Built (mock) | Manual |
 | COM-14 | Each community gets a consistent avatar colour. | The same community always shows the same colour everywhere, picked from the design palette by its ID. | Could | Built (mock) | `format.test` |
 | COM-15 | A user can leave a community. | Leaving removes their membership. Their existing bets stay and still settle. | Should | Not built — API only, no UI | — |
 | COM-16 | The creator can remove members and change roles. | Creator can promote a member to MODERATOR, demote them, or remove them. | Could | Not built — API only, no UI | — |
-| COM-17 | The creator can issue a new invite code. | Generating a new code makes the old link stop working and starts a fresh 15-minute window (INV-09). | Could | Not built — API only, no UI | `invite_expiry_test` |
+| COM-17 | The creator can issue a new invite link. | The invite dialog has "Get a new link" (highlighted once the link has expired), shown only to the community's creator. It calls `POST /communities/:id/invite-code`, shows the new link at once with "New link ready. The old one no longer works.", and starts a fresh 15 minutes (INV-09). Moderators see "Ask the community's creator for a new link." instead, and the API refuses them with `403 FORBIDDEN`. | Must | Built (mock + API) | `community.test`, `api.test`, `invite_expiry_test` |
 | COM-18 | The creator can edit the name and description. | Changes appear everywhere after save. | Could | Not built — API only, no UI | — |
 | COM-19 | A user can't join the same community twice. | Joining again returns 409 `ALREADY_MEMBER`; the database has a unique (community, user) constraint. | Must | Built (mock) | `api.test` |
 | COM-20 | Users can see all their communities in one place. | `/communities` ("Groups" in the nav) lists every community the user belongs to with privacy, member count and a Creator/Moderator chip where it applies, plus "+ New community" and a link to Discover. Communities the user hasn't joined aren't listed. | Must | Built (mock) | `community.test` |
+| COM-21 | The API says when an invite link expires. | `GET /communities/:id` (for creators and moderators) and `POST /communities/:id/invite-code` return `inviteExpiresAt` next to `inviteCode`, so the dialog can count down and mark the link expired. Without it the dialog falls back to "This link works for 15 minutes after it's created." | Should | Partial — frontend and mock built; the Go API doesn't send `inviteExpiresAt` yet | `community.test`, `api.test` |
 
 ### 3.5 Discover (DSC)
 
@@ -245,12 +246,12 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | INV-01 | An invite link shows what the user is joining. | Once signed in (AUTH-11), `/invite/<code>` shows the community's avatar, name, description, member count and moderators before joining. | Must | Built (mock) | `community.test` |
 | INV-02 | Accepting an invite joins the community. | "Accept & join" makes the user a MEMBER and opens the community page. | Must | Built (mock) | `community.test` |
 | INV-03 | Existing members aren't asked to join again. | If the user is already a member, the page says so and links straight to the community. | Must | Built (mock) | `community.test` |
-| INV-04 | Invalid codes are rejected. | An unknown, replaced or expired code shows "That invite link isn't valid" (`INVALID_INVITE_CODE`). | Must | Built (mock) | `api.test`, `community.test` |
+| INV-04 | Invalid codes are rejected. | An unknown, replaced or expired code shows "That invite link isn't valid" (`INVALID_INVITE_CODE`) and explains that invite links only work for 15 minutes, so the visitor should ask for a fresh one. | Must | Built (mock) | `api.test`, `community.test`, `invite.test` |
 | INV-05 | Invite codes are hard to guess. | Codes are random, at least 8 characters, and unique across communities. | Should | Backend only | Manual |
 | INV-06 | Shared invite links show an inviting preview. | Pasting an invite link into a chat app shows the title "Join <group> on called it.", a description with privacy and member count, and a 1200×630 lime image: "You're invited to join <group>", "<N> members making predictions" and "Tap to join →". Group names over 60 characters are shortened at a word. | Should | Built (mock) | `invite.test` |
 | INV-07 | The public invite details reveal only what the link already grants. | `GET /public/invites/:code` works without signing in and returns only the group's name, visibility and member count (no description, moderators or members). Unknown and expired codes return `404 INVALID_INVITE_CODE`. | Must | Built (mock + API) | `api.test`, `router_test`, `invite_expiry_test` |
 | INV-08 | A broken lookup never looks like a bad link. | If the invite can't be looked up (API down or unreachable), the signed-out page and the preview show a generic invitation ("You're invited to join a group on called it.") with the same buttons; "That invite link isn't valid" appears only when the API says the code doesn't exist. | Should | Built | `invite.test` |
-| INV-09 | Invite links expire after 15 minutes. | A code works for 15 minutes after the community is created or the code is regenerated. After that the invite page, the public lookup and joining all return `404 INVALID_INVITE_CODE`, and membership doesn't change. Opening or previewing a link never extends it; only issuing a new code (COM-17) starts a new 15 minutes. Both invite lookups send `Cache-Control: no-store`. | Must | Partial — API only; the mock never expires codes and the UI doesn't say links expire | `invite_expiry_test` |
+| INV-09 | Invite links expire after 15 minutes. | A code works for 15 minutes after the community is created or the code is regenerated. After that the invite page, the public lookup and joining all return `404 INVALID_INVITE_CODE`, and membership doesn't change. Opening or previewing a link never extends it; only issuing a new code (COM-17) starts a new 15 minutes. Both invite lookups send `Cache-Control: no-store`, and the Next.js server doesn't cache the public lookup either. The mock expires codes the same way. | Must | Built (mock + API) | `api.test`, `community.test`, `invite_expiry_test` |
 
 ### 3.7 Creating and viewing markets (MKT)
 
@@ -611,8 +612,8 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 20 | The 5-minute grace period is fixed. | RES-16 | The backend reads it from one setting, `PAYOUT_GRACE_MINUTES` (default 5). The UI reads `payoutAt` from the API, so changing it needs no frontend change except the "5 minutes" wording (`PAYOUT_GRACE_MINUTES` in the frontend). Keep the two in sync. |
 | 21 | Free ngrok tunnels intercept browser requests with a warning page. | API-10 | Handled by the frontend header. For shared testing, a paid ngrok plan or another tunnel avoids the page entirely. |
 | 22 | Link previews only work on a public URL. Chat apps fetch the link themselves, so `localhost` or a LAN address never previews, and apps cache a preview for hours or days after first seeing a link. | INV-06, NAV-08 | Check previews after deploying to Vercel (image URLs use its production URL automatically). Use each app's cache-busting or debug tool when testing changes. |
-| 23 | Invite links expire 15 minutes after they're issued, but nothing in the UI can issue a new code, so a private community's "Invite people" link stops working 15 minutes after the community is created. | INV-09, COM-12, COM-17 | Frontend: add "Get a new link" to the invite dialog (calls `POST /communities/:id/invite-code`, client already has `rotateInviteCode`) and say the link lasts 15 minutes. Backend: consider returning `inviteExpiresAt` with `inviteCode` so the dialog can show time left. |
-| 24 | The frontend caches the public invite lookup for 5 minutes (`revalidate: 300` in `lib/api/public-invite.ts`), so a signed-out page or preview can still show a group up to 5 minutes after its link expired. | INV-06, INV-09 | Frontend: fetch with `cache: "no-store"` to match the API. Chat apps also cache previews for hours (issue 22), so an old preview can outlive the link either way; joining still fails correctly. |
+| 23 | ~~Invite links expire 15 minutes after they're issued, but nothing in the UI can issue a new code.~~ | INV-09, COM-12, COM-17 | Done: the invite dialog has "Get a new link" for the creator and says links last 15 minutes. Remaining backend step: return `inviteExpiresAt` with `inviteCode` (COM-21) so the dialog can show time left. |
+| 24 | ~~The frontend caches the public invite lookup for 5 minutes.~~ | INV-06, INV-09 | Done: `lib/api/public-invite.ts` fetches with `cache: "no-store"`. Chat apps still cache previews for hours (issue 22), so an old preview can outlive the link; joining still fails correctly. |
 
 ---
 
@@ -623,9 +624,9 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | AUTH | 24 | 15 | 4 | 0 | 5 | 15 |
 | USR | 8 | 6 | 0 | 2 | 0 | 4 |
 | WAL | 10 | 7 | 0 | 1 | 2 | 8 |
-| COM | 20 | 14 | 2 | 4 | 0 | 15 |
+| COM | 21 | 16 | 2 | 3 | 0 | 16 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
-| INV | 9 | 7 | 1 | 0 | 1 | 8 |
+| INV | 9 | 8 | 0 | 0 | 1 | 8 |
 | MKT | 15 | 14 | 1 | 0 | 0 | 10 |
 | ODD | 8 | 8 | 0 | 0 | 0 | 7 |
 | BET | 15 | 14 | 1 | 0 | 0 | 11 |
@@ -643,6 +644,6 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | DATA | 8 | 0 | 1 | 0 | 7 | 4 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **214** | **165** | **16** | **10** | **22** | **148** |
+| **Total** | **215** | **168** | **15** | **10** | **22** | **148** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. Withdrawn requirements aren't counted. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.
