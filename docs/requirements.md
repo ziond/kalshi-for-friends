@@ -93,6 +93,10 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | `grace_period_test` | `internal/router/grace_period_test.go` |
 | `lifecycle_test` | `internal/router/lifecycle_test.go` |
 | `config_test` | `internal/config/config_test.go` |
+| `daily_bonus_test` | `internal/router/daily_bonus_test.go` |
+| `router_test` | `internal/router/router_test.go` |
+| `points_test` | `internal/modules/points/api_test.go` |
+| `rate_limit_test` | `internal/middleware/rate_limit_test.go` |
 | `schema.sql` | `tests/schema.sql` (database constraints; run by `scripts/test-migrations.sh`) |
 
 ### 1.5 Glossary
@@ -146,7 +150,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | AUTH-02 | Usernames are unique and at most 50 characters. | Registering with a taken username fails with a clear error and no account is created. The field won't accept more than 50 characters. | Must | Partial — length enforced in UI; uniqueness is backend only | Manual |
 | AUTH-03 | Emails are unique and valid. | Registering with an existing email or a malformed address fails with a clear error. | Must | Partial — format checked by the browser; uniqueness is backend only | Manual |
 | AUTH-04 | Passwords are at least 8 characters and never stored in plain text. | The form rejects passwords under 8 characters. The database stores only a hash (bcrypt or argon2). | Must | Partial — length in UI; hashing is backend only | Manual |
-| AUTH-05 | Every new account starts with 1,000 points. | Immediately after registering, the balance shows 1,000 pts and an `INITIAL_BONUS` transaction of +1,000 exists. The first daily bonus (WAL-11) opens 24 hours after signup. | Must | Backend only | Manual |
+| AUTH-05 | Every new account starts with 1,000 points. | Immediately after registering, the balance shows 1,000 pts and an `INITIAL_BONUS` transaction of +1,000 exists. The first daily bonus (WAL-11) opens 24 hours after signup. | Must | Backend only | `daily_bonus_test` |
 | AUTH-06 | A user can log in with email and password. | Correct credentials sign the user in and a full page load takes them to Home (or the `next` page, AUTH-10). Wrong credentials return `401` and show an error that doesn't reveal which field was wrong. | Must | Partial — mock accepts any credentials | `auth.test`, `client.test` |
 | AUTH-07 | Login and register issue an access token and a refresh token as cookies. | Both responses set `access_token` and `refresh_token` cookies with `HttpOnly; SameSite=Lax; Path=/` (plus `Secure` outside localhost). Neither token is readable from JavaScript or stored in localStorage. | Must | Backend only | Manual |
 | AUTH-08 | A user can log out. | "Log out" on the profile calls `POST /auth/logout`, which expires both cookies; cached data is cleared and a full page load goes to `/login`. Visiting an app page afterwards redirects to login. | Must | Built (mock) | `account.test` |
@@ -191,11 +195,11 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | WAL-05 | ~~A user can only deposit into their own wallet.~~ | **Withdrawn:** there are no deposits; WAL-12 covers the daily bonus. | — | Withdrawn | — |
 | WAL-06 | The points popover closes cleanly. | Clicking the balance pill opens a popover with the balance and the daily bonus; clicking outside it or pressing Escape closes it. | Should | Built (mock) | Manual |
 | WAL-07 | Balances can never go negative. | No combination of bets, concurrent requests or payouts leaves a wallet below 0. | Must | Backend only (mock checks per bet) | `api.test` |
-| WAL-08 | Every points movement is recorded as a transaction. | Each signup bonus, daily bonus, bet, win payout and refund writes one transaction row with a signed amount and `balance_after`. The sum of a user's transactions equals their balance. | Must | Backend only | Manual |
+| WAL-08 | Every points movement is recorded as a transaction. | Each signup bonus, daily bonus, bet, win payout and refund writes one transaction row with a signed amount and `balance_after`. The sum of a user's transactions equals their balance. | Must | Backend only | `daily_bonus_test`, `lifecycle_test` |
 | WAL-09 | Users can see their transaction history. | A page lists transactions newest first with type, amount, resulting balance and market title where relevant. | Could | Not built — API only, no UI | — |
 | WAL-10 | ~~The deposit feature can be switched off before real money exists.~~ | **Withdrawn:** deposits no longer exist. | — | Withdrawn | — |
-| WAL-11 | Users can claim 1,000 points every 24 hours. | When `nextDailyBonusAt` has passed, the balance pill shows a lime gift and dot, and its popover offers "Claim 1,000 pts". Claiming adds exactly 1,000, shows "+1,000 pts added.", writes a `DAILY_BONUS` transaction and sets the next claim to 24 hours later. | Must | Built (mock) | `points.test`, `api.test` |
-| WAL-12 | Daily bonuses don't stack. | At most one bonus is waiting at a time: however long a user is away, their next claim adds 1,000 once, and the 24-hour timer restarts from that claim. Claiming early returns `409 DAILY_BONUS_NOT_READY` ("Your next 1,000 points are ready in 5h 12m") and changes nothing. Only the signed-in user's own wallet can be credited. | Must | Built (mock) | `api.test` |
+| WAL-11 | Users can claim 1,000 points every 24 hours. | When `nextDailyBonusAt` has passed, the balance pill shows a lime gift and dot, and its popover offers "Claim 1,000 pts". Claiming adds exactly 1,000, shows "+1,000 pts added.", writes a `DAILY_BONUS` transaction and sets the next claim to 24 hours later. | Must | Built (mock + API) | `points.test`, `api.test`, `daily_bonus_test`, `config_test` |
+| WAL-12 | Daily bonuses don't stack. | At most one bonus is waiting at a time: however long a user is away, their next claim adds 1,000 once, and the 24-hour timer restarts from that claim. Claiming early returns `409 DAILY_BONUS_NOT_READY` ("Your next 1,000 points are ready in 5h 12m") and changes nothing. Only the signed-in user's own wallet can be credited. | Must | Built (mock + API) | `api.test`, `daily_bonus_test`, `points_test` |
 | WAL-13 | Users can see when the next bonus opens. | Before it's ready, the popover shows "Next 1,000 pts in h:mm:ss", counting down each second, and explains that bonuses don't stack. When it reaches zero the pill lights up without a reload. | Should | Built (mock) | `points.test` |
 | WAL-14 | Home reminds users to claim. | While a bonus is waiting, Home shows "Your daily 1,000 points are here" with "Claim 1,000 pts" above the hero; after claiming it confirms "+1,000 pts added. Your next drop is in h:mm:ss." It's hidden otherwise. | Should | Built (mock) | `points.test` |
 
@@ -243,7 +247,7 @@ Backend tests live on `backend-dev` (paths relative to the backend root). Run th
 | INV-04 | Invalid codes are rejected. | An unknown code shows "That invite link isn't valid" (`INVALID_INVITE_CODE`). | Must | Built (mock) | `api.test`, `community.test` |
 | INV-05 | Invite codes are hard to guess. | Codes are random, at least 8 characters, and unique across communities. | Should | Backend only | Manual |
 | INV-06 | Shared invite links show an inviting preview. | Pasting an invite link into a chat app shows the title "Join <group> on called it.", a description with privacy and member count, and a 1200×630 lime image: "You're invited to join <group>", "<N> members making predictions" and "Tap to join →". Group names over 60 characters are shortened at a word. | Should | Built (mock) | `invite.test` |
-| INV-07 | The public invite details reveal only what the link already grants. | `GET /public/invites/:code` works without signing in and returns only the group's name, visibility and member count (no description, moderators or members). Unknown codes return `404 INVALID_INVITE_CODE`. | Must | Built (mock) | `api.test` |
+| INV-07 | The public invite details reveal only what the link already grants. | `GET /public/invites/:code` works without signing in and returns only the group's name, visibility and member count (no description, moderators or members). Unknown codes return `404 INVALID_INVITE_CODE`. | Must | Built (mock + API) | `api.test`, `router_test` |
 | INV-08 | A broken lookup never looks like a bad link. | If the invite can't be looked up (API down or unreachable), the signed-out page and the preview show a generic invitation ("You're invited to join a group on called it.") with the same buttons; "That invite link isn't valid" appears only when the API says the code doesn't exist. | Should | Built | `invite.test` |
 
 ### 3.7 Creating and viewing markets (MKT)
@@ -443,7 +447,7 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | SEC-07 | Login is protected against brute force. | Repeated failed logins from one account or IP are rate-limited. | Should | Not built | — |
 | SEC-08 | ~~Deposits are rate-limited.~~ | **Withdrawn:** deposits no longer exist; WAL-12 limits the daily bonus to one claim per 24 hours. | — | Withdrawn | — |
 | SEC-09 | Cookie-based auth is protected against cross-site requests. | Auth cookies are `SameSite=Lax`, every state-changing endpoint is `POST`/`PATCH`/`DELETE` and requires a JSON body, and the API doesn't send permissive CORS headers. | Should | Backend only | Manual |
-| SEC-10 | The only signed-out read is the public invite lookup. | `GET /public/invites/:code` is the one API read that needs no access token. It's rate-limited per IP so invite codes can't be guessed by brute force (INV-05). | Should | Backend only | Manual |
+| SEC-10 | The only signed-out read is the public invite lookup. | `GET /public/invites/:code` is the one API read that needs no access token. It's rate-limited per IP so invite codes can't be guessed by brute force (INV-05). | Should | Backend only | `rate_limit_test` |
 
 ### 4.3 Data integrity and concurrency (DATA)
 
@@ -456,7 +460,7 @@ These apply mainly to the Go backend. The frontend mock follows them so the UI c
 | DATA-05 | Points are conserved. | After settlement, total paid out equals the pool (resolved) or total staked (nullified). No points are created or destroyed except by the signup and daily bonuses. | Must | Partial — see RES-06 | Manual |
 | DATA-06 | Uniqueness is enforced in the database. | Unique constraints on username, email, (community, user) membership, one wallet per user and invite codes. | Must | Backend only | Manual |
 | DATA-07 | A payout and a nullify can't both happen. | If a nullify arrives as the grace period ends, exactly one wins: either everyone is refunded and the market is CANCELLED, or winners are paid and the market is RESOLVED (the nullify then gets `MARKET_CLOSED`). The market row is locked during both. | Must | Backend only | `grace_period_test` |
-| DATA-08 | A daily bonus can't be claimed twice. | Two claims sent at the same instant (double click, two tabs) credit 1,000 once; the other gets `DAILY_BONUS_NOT_READY`. The check and the update are one conditional statement on the wallet row. | Must | Backend only | Manual |
+| DATA-08 | A daily bonus can't be claimed twice. | Two claims sent at the same instant (double click, two tabs) credit 1,000 once; the other gets `DAILY_BONUS_NOT_READY`. The check and the update are one conditional statement on the wallet row. | Must | Backend only | `daily_bonus_test` |
 
 ### 4.4 Performance (PERF)
 
@@ -595,7 +599,7 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | 10 | Prediction score formula agreed with Owen. | LDR-03 | Rounded accuracy × 100, excluding refunds; apply migration 000008 and run database integration tests. |
 | 11 | The faint label grey (#7F8A81) fails contrast on card and raised surfaces. | A11Y-06 | Lighten `--color-faint` to about #96A197 (passes on all three surfaces), or use the muted grey on cards. |
 | 12 | The daily bonus amount (1,000) and interval (24 hours) are fixed. | WAL-11 | Keep both as backend settings. The UI reads `nextDailyBonusAt` and the claimed amount from the API; only its wording ("Claim 1,000 pts") assumes 1,000. |
-| 13 | Schema additions from the contract (visibility, price history, `DAILY_BONUS` type and `wallets.next_daily_bonus_at`) need to be in the backend migrations. | COM-*, ODD-03, WAL-03 | Backend to confirm against `api-contract.md` §1 rows 12–15. |
+| 13 | Schema additions from the contract (visibility, price history, `DAILY_BONUS` type and `wallets.next_daily_bonus_at`) need to be in the backend migrations. | COM-*, ODD-03, WAL-11 | Done: visibility is migration 000006, the grace period 000009 and the daily bonus 000010. Price history is rebuilt from `positions` on read, so it needs no table. |
 | 14 | Auth cookies must use `Path=/`. If the backend scopes `refresh_token` to `/api/v1/auth`, the page guard can't see it and users are sent to login instead of refreshed. | AUTH-07, AUTH-17 | Backend to set `Path=/` on both cookies (see api-contract.md → Authentication). |
 | 15 | Access and refresh token lifetimes aren't agreed. | AUTH-13, AUTH-19 | Suggested: 15 minutes and 7–30 days. |
 | 16 | Auth cookies must not set `Domain`. The browser receives them from the Next.js origin through the `/api/v1` rewrite, so a `Domain` naming the backend host (e.g. an ngrok URL) is rejected and login appears to do nothing. | AUTH-07, AUTH-24 | Backend to omit `Domain` (see api-contract.md → Authentication). |
@@ -612,9 +616,9 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 
 | Area | Requirements | Built | Partial | Not built | Backend only | Has automated test |
 |---|---|---|---|---|---|---|
-| AUTH | 24 | 15 | 4 | 0 | 5 | 14 |
+| AUTH | 24 | 15 | 4 | 0 | 5 | 15 |
 | USR | 8 | 6 | 0 | 2 | 0 | 4 |
-| WAL | 10 | 7 | 0 | 1 | 2 | 7 |
+| WAL | 10 | 7 | 0 | 1 | 2 | 8 |
 | COM | 20 | 15 | 1 | 4 | 0 | 14 |
 | DSC | 4 | 4 | 0 | 0 | 0 | 4 |
 | INV | 8 | 7 | 0 | 0 | 1 | 7 |
@@ -631,10 +635,10 @@ Items the team needs to act on or decide before the MVP is viable. Each links to
 | UX | 7 | 7 | 0 | 0 | 0 | 4 |
 | A11Y | 7 | 4 | 3 | 0 | 0 | 4 |
 | API | 11 | 9 | 1 | 0 | 1 | 8 |
-| SEC | 9 | 5 | 0 | 1 | 3 | 2 |
-| DATA | 8 | 0 | 1 | 0 | 7 | 3 |
+| SEC | 9 | 5 | 0 | 1 | 3 | 3 |
+| DATA | 8 | 0 | 1 | 0 | 7 | 4 |
 | PERF | 4 | 2 | 0 | 0 | 2 | 0 |
 | DEV | 5 | 5 | 0 | 0 | 0 | 2 |
-| **Total** | **213** | **166** | **14** | **11** | **22** | **141** |
+| **Total** | **213** | **166** | **14** | **10** | **22** | **146** |
 
 Counts are a snapshot; the tables in §3 and §4 are authoritative. Withdrawn requirements aren't counted. **Built** includes Built (mock) and Built (mock + API); a test on either side (frontend or Go) counts as an automated test. Update the Status and Test columns in the same PR that changes the behaviour.

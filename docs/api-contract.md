@@ -407,6 +407,8 @@ Each of these must run inside a single database transaction.
 | `OPTION_SWITCH_NOT_ALLOWED` | 409 |
 | `DAILY_BONUS_NOT_READY` | 409 |
 
+Rate limits answer `429` with code `FORBIDDEN` and `Retry-After: 60`: `POST /auth/register` and `POST /auth/login` allow 30 requests a minute per IP, and `GET /public/invites/:code` allows 120. The Next.js server makes every public invite lookup, so all link previews and signed-out visitors share its budget.
+
 `BAD_RESPONSE` (502) is frontend-only: the client uses it when a response isn't JSON (e.g. a tunnel or proxy page). The API never sends it.
 
 `MARKET_CLOSED` covers every action the market's status doesn't allow: betting after the deadline, picking a winner when one is already picked (message: "A winner has already been picked. You can only nullify this market") or the market is settled, and nullifying after the payout.
