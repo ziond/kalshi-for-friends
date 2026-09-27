@@ -3,14 +3,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { communitiesApi } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
-import type { CommunityDetail, ID } from "@/types";
+import type { CommunityDetail, DiscoverParams, ID } from "@/types";
 
 export function useCommunities() {
   return useQuery({ queryKey: queryKeys.communities.list(), queryFn: communitiesApi.list });
 }
 
-export function useDiscoverCommunities() {
-  return useQuery({ queryKey: queryKeys.communities.discover(), queryFn: communitiesApi.discover });
+export function useDiscoverCommunities(params?: DiscoverParams, { enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: queryKeys.communities.discover(params),
+    queryFn: () => communitiesApi.discover(params),
+    enabled,
+  });
 }
 
 export function useCommunity(communityId: ID) {

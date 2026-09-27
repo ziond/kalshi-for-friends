@@ -67,6 +67,12 @@ export interface LeaderboardEntry {
 
 // ---- requests ----
 
+/** GET /communities/discover */
+export interface DiscoverParams {
+  /** Search: community name or description contains this (case-insensitive). */
+  q?: string;
+}
+
 export interface CreateCommunityRequest {
   name: string;
   description?: string;

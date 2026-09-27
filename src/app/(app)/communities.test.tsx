@@ -1,7 +1,9 @@
 // Community flows: Discover, the community page, creating one, and invite links.
 
 import { screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { usersApi } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 import { navigation } from "@/test/navigation";
 import { renderWithClient } from "@/test/render";
 import CommunitiesPage from "./communities/page";
@@ -121,13 +123,59 @@ describe("Create community", () => {
     const { user } = renderWithClient(<CreateCommunityPage />);
 
     await user.type(screen.getByLabelText("Community name"), "Board Game Night");
-    await user.type(screen.getByPlaceholderText("Add username…"), "Sam K.{Enter}");
-    expect(screen.getByRole("button", { name: "Sam K. ×" })).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("Add username…"), "sam k.{Enter}");
+    expect(await screen.findByText("Sam K.")).toBeInTheDocument(); // found: shown as stored
+    expect(screen.getByRole("button", { name: "Remove sam k." })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create community" }));
 
     await waitForPush("/communities/7");
     const { communities } = await import("@/lib/api/mock/db");
     expect(communities.at(-1)).toMatchObject({ name: "Board Game Night", visibility: "PUBLIC", moderatorIds: [1, 2] });
+  });
+
+  it("flags a username that doesn't exist and won't create until it's fixed", async () => {
+    const { user } = renderWithClient(<CreateCommunityPage />);
+    await user.type(screen.getByLabelText("Community name"), "Board Game Night");
+
+    await user.type(screen.getByPlaceholderText("Add username…"), "Nobody Here{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No user called “Nobody Here”. Check the spelling or remove them.");
+    expect(screen.getByText("· not found")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create community" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Remove Nobody Here" }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create community" })).toBeEnabled();
+  });
+
+  it("explains instead of adding yourself or a duplicate", async () => {
+    const { user, client } = renderWithClient(<CreateCommunityPage />);
+    const input = screen.getByPlaceholderText("Add username…");
+    await waitFor(() => expect(client.getQueryState(queryKeys.me.profile())?.status).toBe("success"));
+
+    await user.type(input, "jordan{Enter}"); // the signed-in user
+    expect(await screen.findByText("You're a moderator automatically.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove jordan" })).not.toBeInTheDocument();
+
+    await user.type(input, "Sam K.{Enter}");
+    await user.type(input, "SAM K.{Enter}");
+    expect(screen.getByText("SAM K. is already on the list.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Remove / })).toHaveLength(1);
+  });
+
+  it("shows the server's rejection next to the moderators when the lookup can't run", async () => {
+    vi.spyOn(usersApi, "lookup").mockRejectedValue(new Error("Route not found")); // e.g. an older API
+    const { user } = renderWithClient(<CreateCommunityPage />);
+    await user.type(screen.getByLabelText("Community name"), "Board Game Night");
+    await user.type(screen.getByPlaceholderText("Add username…"), "Ghost{Enter}");
+
+    const create = screen.getByRole("button", { name: "Create community" });
+    await waitFor(() => expect(create).toBeEnabled()); // unverified: the server decides
+    await user.click(create);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unknown username: Ghost");
+    expect(navigation.router.push).not.toHaveBeenCalled();
   });
 
   it("switches to private and hides the moderator picker", async () => {

@@ -26,8 +26,10 @@ import type {
   ResolveMarketRequest,
   Role,
   UserSummary,
+  UsernameLookup,
 } from "@/types";
 import { DAILY_BONUS_POINTS, INVITE_LINK_MINUTES, PAYOUT_GRACE_MINUTES } from "@/types";
+import { matchesSearch } from "@/lib/search";
 import { ApiError } from "../errors";
 import {
   ME,
@@ -71,6 +73,12 @@ function getCommunity(id: ID): CommunityRow {
     throw new ApiError(403, "FORBIDDEN", "This community is invite-only");
   }
   return c;
+}
+
+/** Usernames match case-insensitively, ignoring surrounding spaces. */
+function findUser(username: string) {
+  const wanted = username.trim().toLowerCase();
+  return wanted ? users.find((u) => u.username.toLowerCase() === wanted) : undefined;
 }
 
 const inviteExpiry = () => new Date(Date.now() + INVITE_LINK_MINUTES * 60_000).toISOString();
@@ -308,22 +316,33 @@ const routes: [string, RegExp, Handler][] = [
     };
   }],
 
+  ["GET", /^\/users\/lookup$/, (_, q): UsernameLookup => {
+    const found = findUser(q.username ?? "");
+    return { user: found ? user(found.id) : null };
+  }],
+
   ["GET", /^\/users\/(\d+)$/, ([id]) => ({ ...me(), ...user(Number(id)) })],
 
   ["GET", /^\/communities$/, () =>
     communities.filter((c) => roleOf(c, ME)).map(communitySummary)],
 
-  ["GET", /^\/communities\/discover$/, () =>
-    communities.filter((c) => c.visibility === "PUBLIC").sort((a, b) => b.memberCount - a.memberCount).map(communitySummary)],
+  ["GET", /^\/communities\/discover$/, (_, q) =>
+    communities.filter((c) => c.visibility === "PUBLIC" && (!q.q || matchesSearch(`${c.name} ${c.description}`, q.q))).sort((a, b) => b.memberCount - a.memberCount).map(communitySummary)],
 
   ["POST", /^\/communities$/, (_, __, body) => {
     const req = body as CreateCommunityRequest;
     if (!req.name?.trim()) {
       throw new ApiError(400, "VALIDATION_ERROR", "Name is required", { name: "Required" });
     }
-    const moderatorIds = (req.moderatorUsernames ?? [])
-      .map((name) => users.find((u) => u.username.toLowerCase() === name.trim().toLowerCase())?.id)
-      .filter((id): id is ID => id !== undefined);
+    // Like the backend: an unknown username rejects the whole request, naming the first one.
+    const moderatorIds = (req.moderatorUsernames ?? []).map((name) => {
+      const found = findUser(name);
+      if (!found) {
+        throw new ApiError(400, "VALIDATION_ERROR", "Unknown moderator",
+          { moderatorUsernames: `Unknown username: ${name}` });
+      }
+      return found.id;
+    });
     const id = nextIds.community();
     const row: CommunityRow = {
       id,
@@ -417,7 +436,8 @@ const routes: [string, RegExp, Handler][] = [
       const c = communities.find((x) => x.id === m.communityId)!;
       if (q.visibility === "PUBLIC") return c.visibility === "PUBLIC";
       if (q.visibility === "PRIVATE") return c.visibility === "PRIVATE" && roleOf(c, ME);
-      return roleOf(c, ME);
+      // Like the backend: every public community's markets, plus those of communities you're in.
+      return c.visibility === "PUBLIC" || roleOf(c, ME);
     });
     return page(sortAndFilter(visible, q), q);
   }],
@@ -545,6 +565,7 @@ function sortAndFilter(list: MarketRow[], q: Query): MarketSummary[] {
   return list
     .map(syncStatus)
     .filter((m) => !q.status || m.status === q.status)
+    .filter((m) => !q.q || matchesSearch(`${m.title} ${communities.find((c) => c.id === m.communityId)!.name}`, q.q))
     .sort((a, b) => (q.sort === "newest" ? b.createdAt.localeCompare(a.createdAt) : pool(b) - pool(a)))
     .map(marketSummary);
 }

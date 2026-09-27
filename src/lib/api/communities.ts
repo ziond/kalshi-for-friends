@@ -3,6 +3,7 @@ import type {
   CommunityMember,
   CommunitySummary,
   CreateCommunityRequest,
+  DiscoverParams,
   ID,
   InviteCodeResponse,
   InvitePreview,
@@ -17,7 +18,8 @@ export const communitiesApi = {
   /** Communities the current user belongs to. */
   list: () => api.get<CommunitySummary[]>("/communities"),
   /** All public communities, joined or not. */
-  discover: () => api.get<CommunitySummary[]>("/communities/discover"),
+  discover: (params?: DiscoverParams) =>
+    api.get<CommunitySummary[]>("/communities/discover", { query: { ...params } }),
   create: (body: CreateCommunityRequest) => api.post<CommunityDetail>("/communities", body),
   /** Join a private community with an invite code. */
   joinByCode: (body: JoinCommunityRequest) =>

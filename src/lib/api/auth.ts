@@ -12,6 +12,7 @@ import type {
   Transaction,
   UpdateMeRequest,
   UserProfile,
+  UsernameLookup,
   Wallet,
 } from "@/types";
 import { api } from "./client";
@@ -40,4 +41,6 @@ export const meApi = {
 
 export const usersApi = {
   get: (userId: ID) => api.get<UserProfile>(`/users/${userId}`),
+  /** { user: null } if nobody has that username. Errors mean "couldn't check", not "doesn't exist". */
+  lookup: (username: string) => api.get<UsernameLookup>("/users/lookup", { query: { username } }),
 };

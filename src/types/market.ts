@@ -118,6 +118,8 @@ export interface MarketListParams extends PaginationParams {
   /** Feed only: PRIVATE = my private communities, PUBLIC = all public communities. */
   visibility?: Visibility;
   sort?: "volume" | "newest";
+  /** Search: market title or community name contains this (case-insensitive). */
+  q?: string;
 }
 
 /** Markets the current user is the assigned moderator for. */

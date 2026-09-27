@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { CommunityRow } from "@/components/community-row";
-import { ArrowUpRightIcon, FlameIcon, GlobeIcon, SearchIcon, TrendingUpIcon } from "@/components/icons";
+import { ArrowUpRightIcon, FlameIcon, GlobeIcon, SearchIcon, TrendingUpIcon, UsersIcon } from "@/components/icons";
 import { MarketCard, MarketGrid } from "@/components/market-card";
 import { DailyBonusCard } from "@/components/points-pill";
-import { EmptyState, Eyebrow, SectionHeader, SectionLink, Skeleton, inputClass } from "@/components/ui";
+import { EmptyState, ErrorNote, Eyebrow, SectionHeader, SectionLink, Skeleton, inputClass } from "@/components/ui";
 import { useCommunities } from "@/hooks/use-communities";
 import { useMarketFeed } from "@/hooks/use-markets";
 import { useMe } from "@/hooks/use-me";
+import { useDebouncedValue, useSearch } from "@/hooks/use-search";
 import { greeting } from "@/lib/format";
-import type { MarketSummary, Visibility } from "@/types";
+import type { Visibility } from "@/types";
 
 function HeroCard() {
   return (
@@ -43,19 +44,14 @@ function FeedSection({
   title,
   action,
   visibility,
-  search,
 }: {
   icon: ReactNode;
   title: string;
   action?: ReactNode;
   visibility: Visibility;
-  search: string;
 }) {
   const { data, isLoading } = useMarketFeed({ visibility, status: "OPEN", sort: "volume", limit: 3 });
-  const q = search.trim().toLowerCase();
-  const markets = (data?.items ?? []).filter(
-    (m: MarketSummary) => !q || m.title.toLowerCase().includes(q) || m.communityName.toLowerCase().includes(q),
-  );
+  const markets = data?.items ?? [];
 
   return (
     <section>
@@ -69,9 +65,58 @@ function FeedSection({
           {markets.map((m) => <MarketCard key={m.id} market={m} />)}
         </MarketGrid>
       ) : (
-        <EmptyState>{q ? "No markets match your search." : "No open markets yet."}</EmptyState>
+        <EmptyState>No open markets yet.</EmptyState>
       )}
     </section>
+  );
+}
+
+function SearchResults({ query }: { query: string }) {
+  const { markets, moreMarkets, communities, isLoading, error } = useSearch(query);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-3" aria-busy>
+        <Skeleton className="h-[76px]" />
+        <MarketGrid>{[0, 1].map((i) => <Skeleton key={i} className="h-[360px]" />)}</MarketGrid>
+      </div>
+    );
+  }
+  if (error) return <ErrorNote error={error} />;
+  if (!markets.length && !communities.length) {
+    return <EmptyState>Nothing matches “{query}”. Try another word, or check the spelling.</EmptyState>;
+  }
+
+  return (
+    <div className="flex flex-col gap-10">
+      {communities.length > 0 && (
+        <section aria-label="Matching communities">
+          <SectionHeader icon={<UsersIcon size={19} className="text-purple" />} title={`Communities · ${communities.length}`} />
+          <div className="flex flex-col gap-2.5">
+            {communities.map((c) => (
+              <CommunityRow key={c.id} community={c}
+                trailing={c.myRole === null ? (
+                  <span className="flex-none rounded-full bg-raised px-2.5 py-1 text-[11px] font-semibold text-muted">
+                    Not joined
+                  </span>
+                ) : undefined} />
+            ))}
+          </div>
+        </section>
+      )}
+      {markets.length > 0 && (
+        <section aria-label="Matching markets">
+          <SectionHeader icon={<FlameIcon size={20} className="text-orange" />}
+            title={`Markets · ${moreMarkets ? `${markets.length}+` : markets.length}`} />
+          <MarketGrid>{markets.map((m) => <MarketCard key={m.id} market={m} />)}</MarketGrid>
+          {moreMarkets && (
+            <p className="mt-3 text-sm text-muted">
+              Showing the top {markets.length} by volume. Add another word to narrow it down.
+            </p>
+          )}
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -96,6 +141,8 @@ function YourCommunities() {
 export default function HomePage() {
   const { data: me } = useMe();
   const [search, setSearch] = useState("");
+  const query = useDebouncedValue(search.trim());
+  const searching = search.trim().length > 0;
 
   return (
     <div className="mx-auto flex max-w-[1180px] flex-col gap-8 px-4 pt-7 pb-16 sm:px-6">
@@ -112,28 +159,42 @@ export default function HomePage() {
 
       <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-w-0 flex-col gap-10">
-          <div className="relative">
+          <div className="relative" role="search">
             <SearchIcon size={16} className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint" />
             <input
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setSearch("")}
               placeholder="Search markets or communities"
-              className={`${inputClass} rounded-full py-3 pl-11`}
+              aria-label="Search markets or communities"
+              className={`${inputClass} rounded-full py-3 pr-11 pl-11 [&::-webkit-search-cancel-button]:hidden`}
             />
+            {searching && (
+              <button type="button" onClick={() => setSearch("")} aria-label="Clear search"
+                className="absolute top-1/2 right-3 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-raised hover:text-ink">
+                ×
+              </button>
+            )}
           </div>
-          <FeedSection
-            icon={<FlameIcon size={20} className="text-orange" />}
-            title="Your friends are betting"
-            visibility="PRIVATE"
-            search={search}
-          />
-          <FeedSection
-            icon={<GlobeIcon size={19} className="text-yes" />}
-            title="Trending in public communities"
-            action={<SectionLink href="/discover">See all</SectionLink>}
-            visibility="PUBLIC"
-            search={search}
-          />
+          {searching ? (
+            // Until the debounce settles, keep showing the last results (or a loading state).
+            <SearchResults query={query || search.trim()} />
+          ) : (
+            <>
+              <FeedSection
+                icon={<FlameIcon size={20} className="text-orange" />}
+                title="Your friends are betting"
+                visibility="PRIVATE"
+              />
+              <FeedSection
+                icon={<GlobeIcon size={19} className="text-yes" />}
+                title="Trending in public communities"
+                action={<SectionLink href="/discover">See all</SectionLink>}
+                visibility="PUBLIC"
+              />
+            </>
+          )}
         </div>
         <YourCommunities />
       </div>

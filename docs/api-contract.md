@@ -127,6 +127,8 @@ interface DailyBonusResponse { // POST /me/daily-bonus
 
 interface UserProfile extends UserSummary, UserStats { createdAt: ISODate; }
 
+interface UsernameLookup { user: UserSummary | null; }  // GET /users/lookup — null when nobody has that username
+
 // ---- communities ----
 interface CommunitySummary {
   id: ID;
@@ -274,7 +276,8 @@ interface CreateCommunityRequest {
   name: string;
   description?: string;
   visibility: Visibility;
-  moderatorUsernames?: string[]; // PUBLIC only; creator is always included
+  moderatorUsernames?: string[]; // PUBLIC only; creator is always included. Matched case-insensitively; an unknown
+                                 // name rejects the whole request (400 VALIDATION_ERROR, fields.moderatorUsernames)
 }
 interface UpdateCommunityRequest  { name?: string; description?: string; }
 interface JoinCommunityRequest    { inviteCode: string; }
@@ -293,8 +296,13 @@ interface MarketListParams {   // query string for GET /markets
   status?: MarketStatus;
   visibility?: Visibility;     // PRIVATE = my private communities, PUBLIC = all public ones
   sort?: 'volume' | 'newest';  // default volume
+  q?: string;                  // search: market title or community name contains q (case-insensitive)
   cursor?: string;
   limit?: number;
+}
+
+interface DiscoverParams {     // query string for GET /communities/discover
+  q?: string;                  // search: community name or description contains q (case-insensitive)
 }
 
 
@@ -322,6 +330,7 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | POST | `/me/daily-bonus` | — | `DailyBonusResponse` — adds 1,000 points if `nextDailyBonusAt` has passed and sets it to now + 24h; writes a `DAILY_BONUS` transaction. Otherwise `409 DAILY_BONUS_NOT_READY` ("Your next 1,000 points are ready in 5h 12m") and nothing changes. Missed days don't stack. (Replaces the removed `POST /me/wallet/deposit`.) |
 | GET | `/me/transactions?cursor=` | — | `Paginated<Transaction>` |
 | GET | `/me/mod-queue` | — | `ModQueue` — polled every 5 s while `payoutPending` isn't empty; `Cache-Control: no-store` |
+| GET | `/users/lookup?username=` | — | `UsernameLookup` — always `200`: `{ user: UserSummary }` if a user has that username (trimmed, case-insensitive), `{ user: null }` if not. The create-community form checks each moderator name with it as it's typed. Register it **before** `/users/:id`, or `lookup` is read as an id. The frontend treats any error as "couldn't check" (never as "not found"), so it degrades safely until this exists |
 | GET | `/users/:id` | — | `UserProfile` |
 
 ### Communities
@@ -329,8 +338,8 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | Method | Route | Who | Body | Returns |
 |---|---|---|---|---|
 | GET | `/communities` | any | — | `CommunitySummary[]` (mine) — Home "Your communities", the Groups page and the profile |
-| POST | `/communities` | any | `CreateCommunityRequest` | `CommunityDetail` — creator becomes ADMIN |
-| GET | `/communities/discover` | any | — | `CommunitySummary[]` — all PUBLIC communities, joined or not |
+| POST | `/communities` | any | `CreateCommunityRequest` | `CommunityDetail` — creator becomes ADMIN. An unknown moderator username rejects the request with `400 VALIDATION_ERROR` and `fields.moderatorUsernames: "Unknown username: <name>"`; nothing is created |
+| GET | `/communities/discover?q=` | any | — | `CommunitySummary[]` — all PUBLIC communities, joined or not. With `q`, only those whose name or description contains it (case-insensitive, trimmed); Home search uses this. **Not in the Go API yet:** until it is, the frontend filters the full list itself |
 | POST | `/communities/join` | any | `JoinCommunityRequest` | `CommunityDetail` — join via invite code. `404 INVALID_INVITE_CODE` if the code is unknown, replaced or expired |
 | GET | `/invites/:code` | any | — | `InvitePreview`, or `404 INVALID_INVITE_CODE` if unknown, replaced or expired. `Cache-Control: no-store` |
 | GET | `/public/invites/:code` | **no sign-in** | — | `PublicInvite`, or `404 INVALID_INVITE_CODE`. Called server-side by the Next.js app (no cookies, no `Origin`) to build link previews and the signed-out invite page. Rate-limited per IP. Expired codes also return 404. Sends `Cache-Control: no-store` |
@@ -347,7 +356,7 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 
 | Method | Route | Who | Body | Returns |
 |---|---|---|---|---|
-| GET | `/markets?status=&visibility=&sort=&cursor=&limit=` | any | — | `Paginated<MarketSummary>` — home "trending" sections (see `MarketListParams`) |
+| GET | `/markets?status=&visibility=&sort=&q=&cursor=&limit=` | any | — | `Paginated<MarketSummary>` — home "trending" sections and Home search (see `MarketListParams`). Without `visibility`, covers every public community plus the caller's own; private communities they aren't in are never included. Home search sends `q` and `limit=12` with no status filter |
 | GET | `/communities/:id/markets?status=&cursor=` | member, or anyone if PUBLIC | — | `Paginated<MarketSummary>` |
 | POST | `/communities/:id/markets` | member | `CreateMarketRequest` | `MarketDetail` |
 | GET | `/markets/:id` | member | — | `MarketDetail` — polled every 5 s while `OPEN`/`LOCKED`/`PAYOUT_PENDING` (see [Live updates](#live-updates-mvp-polling)); `Cache-Control: no-store` |

@@ -312,6 +312,41 @@ describe("invite link expiry", () => {
   });
 });
 
+describe("usernames", () => {
+  it("looks a username up case-insensitively, answering null when there's nobody", async () => {
+    const { usersApi } = await import("@/lib/api");
+    await expect(usersApi.lookup("  sam k. ")).resolves.toEqual({ user: { id: 2, username: "Sam K.", avatarUrl: null } });
+    await expect(usersApi.lookup("Nobody Here")).resolves.toEqual({ user: null });
+  });
+
+  it("rejects a public community with an unknown moderator, creating nothing", async () => {
+    const { communities } = await import("./db");
+    const before = communities.length;
+    const error = await communitiesApi
+      .create({ name: "Board Game Night", visibility: "PUBLIC", moderatorUsernames: ["Sam K.", "Ghost"] })
+      .then(() => null, (e: ApiError) => e);
+
+    expect(error).toMatchObject({ code: "VALIDATION_ERROR", fields: { moderatorUsernames: "Unknown username: Ghost" } });
+    expect(communities).toHaveLength(before);
+  });
+});
+
+describe("search", () => {
+  it("finds markets by title or community name, case-insensitively, in communities you can see", async () => {
+    const byTitle: Paginated<MarketSummary> = await marketsApi.feed({ q: "INTS" });
+    expect(byTitle.items.map((m) => m.title)).toEqual(["Total INTs thrown by our league this week > 5?"]);
+
+    const byCommunity = await marketsApi.feed({ q: "crypto degens" });
+    expect(byCommunity.items.map((m) => m.communityName)).toEqual(["Crypto Degens Only", "Crypto Degens Only"]);
+  });
+
+  it("finds public communities by name or description", async () => {
+    expect((await communitiesApi.discover({ q: "election" })).map((c) => c.name)).toEqual(["Election Junkies"]);
+    expect((await communitiesApi.discover({ q: "political predictions" })).map((c) => c.name)).toEqual(["Election Junkies"]);
+    expect(await communitiesApi.discover({ q: "crypto" })).toEqual([]); // private: never in Discover
+  });
+});
+
 describe("public invite details", () => {
   it("returns only name, visibility and member count, without signing in", async () => {
     const { mockRequest } = await import("./handlers");

@@ -1,4 +1,4 @@
-import type { ID, MarketListParams, PositionListParams } from "@/types";
+import type { DiscoverParams, ID, MarketListParams, PositionListParams } from "@/types";
 
 // Hierarchical keys so related queries can be invalidated together,
 // e.g. invalidateQueries({ queryKey: queryKeys.markets.all }).
@@ -14,11 +14,12 @@ export const queryKeys = {
   },
   users: {
     detail: (userId: ID) => ["users", userId] as const,
+    lookup: (username: string) => ["users", "lookup", username.trim().toLowerCase()] as const,
   },
   communities: {
     all: ["communities"] as const,
     list: () => [...queryKeys.communities.all, "list"] as const,
-    discover: () => [...queryKeys.communities.all, "discover"] as const,
+    discover: (params?: DiscoverParams) => [...queryKeys.communities.all, "discover", params ?? {}] as const,
     invite: (inviteCode: string) => [...queryKeys.communities.all, "invite", inviteCode] as const,
     detail: (communityId: ID) => [...queryKeys.communities.all, communityId] as const,
     members: (communityId: ID) =>

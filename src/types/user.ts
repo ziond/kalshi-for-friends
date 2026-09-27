@@ -44,6 +44,14 @@ export interface LoginRequest {
   password: string;
 }
 
+/**
+ * GET /users/lookup?username= — whether a username exists (case-insensitive), e.g. before
+ * adding someone as a moderator. Always 200: `user` is null when there's no such user.
+ */
+export interface UsernameLookup {
+  user: UserSummary | null;
+}
+
 export interface UpdateMeRequest {
   username?: string;
   avatarUrl?: string;
