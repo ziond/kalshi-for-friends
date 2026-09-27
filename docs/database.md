@@ -1,9 +1,11 @@
 # MVP database schema and implementation handoff
 
-Status: reviewed migration baseline on `backend-owen`. Four migration pairs
-passed local PostgreSQL verification; they have not been applied to a shared database.
-The original [frontend API draft](api.md) is preserved. No handlers, database
-connection, or financial service logic are implemented by this change.
+Status: ten migration pairs (000001–000010, listed in
+[migrations/README.md](../migrations/README.md)). All ten are applied to the shared
+Supabase development database as of 2026-09-27. The API implements the services
+described here; the canonical API is [api-contract.md](api-contract.md), and the
+original [frontend API draft](api.md) is kept for history. Sections below marked
+"ready for Zion" or "to confirm" are from the original handoff.
 
 PostgreSQL 16+, one database, one Go service. Use SQL migrations with
 golang-migrate; do not also run ORM auto-migration. Owen coordinates migration
@@ -14,7 +16,7 @@ numbering so both engineers work from the same schema.
 | Table | Key / important fields | Responsibility |
 | --- | --- | --- |
 | users | id, username, email, password_hash, avatar_url, prediction_score, total_predictions, correct_predictions | Zion: auth and profiles; Owen: prediction stats |
-| wallets | user_id PK, balance, updated_at | Owen; registration must create one |
+| wallets | user_id PK, balance, next_daily_bonus_at, updated_at | Owen; registration must create one |
 | communities | id, name, description, invite_code, creator_id | Zion |
 | community_members | PK (community_id, user_id), role, joined_at | Zion |
 | markets | id, community_id, creator_id, moderator_id, title, description, market_type, deadline, status (OPEN, LOCKED, PAYOUT_PENDING, RESOLVED, CANCELLED), cancellation audit | Owen |
@@ -22,14 +24,16 @@ numbering so both engineers work from the same schema.
 | market_participants | PK (market_id, user_id), option_id | Owen |
 | positions | id, market_id, user_id, option_id, amount, request_key, result, payout, settled_at | Owen |
 | settlements | market_id PK, winning_option_id, resolved_by, resolved_at, payout_at, paid_out_at, notes, pool snapshots, settlement_mode | Owen |
-| transactions | id, user_id, amount, transaction_type, balance_after, reference fields, request_key | Owen; registration must write INITIAL_BONUS |
+| transactions | id, user_id, amount, transaction_type (INITIAL_BONUS, DAILY_BONUS, PLACE_POSITION, WIN_REWARD, LOSS, REFUND; legacy DEPOSIT, POINT_REFILL), balance_after, reference fields, request_key | Owen; registration must write INITIAL_BONUS |
 
 All historical user/market relationships use restrictive deletion. Community
 membership may be deleted without deleting positions, transactions, or payouts.
 The API does not currently offer user, market, or community hard deletion.
 
 There is no separate AI-analysis table, payment integration, or notification
-system in this MVP. There is no refill schedule table until refill policy is agreed.
+system in this MVP. Points come only from the signup bonus and the daily bonus (below);
+DEPOSIT and POINT_REFILL remain in the type check so legacy rows stay valid, but the API
+never writes them.
 
 ## Storage conventions
 
@@ -61,6 +65,8 @@ Register within ONE SQL transaction:
 3. Set the approved starting balance and insert one INITIAL_BONUS transaction
    with amount equal to the grant, balance_after equal to the resulting balance,
    and no position/market reference.
+   Set `next_daily_bonus_at` to now + `DAILY_BONUS_HOURS` so the first daily bonus
+   opens a day after signup.
 4. Commit; then return Me by joining users and wallets.
 
 A unique partial index permits only one INITIAL_BONUS per user. Do not give
@@ -198,11 +204,30 @@ Position references use real foreign keys, including transaction ownership.
 reference_type and reference_id are generated from position_id/market_id; omit
 them from INSERT. Current prediction transaction types use position_id.
 MARKET references are reserved; a future market-level transaction type would
-need a CHECK-constraint migration. INITIAL_BONUS and POINT_REFILL have null
-references. Resolve the display label by joining the referenced position's market.
+need a CHECK-constraint migration. INITIAL_BONUS, DAILY_BONUS and the legacy
+DEPOSIT/POINT_REFILL types have null references. Resolve the display label by joining the referenced position's market.
 
 Do not edit/delete historical ledger entries in application code. No ledger
 immutability trigger or separate DB permissions are added at this stage.
+
+## Daily bonus (migration 000010)
+
+`POST /me/daily-bonus` credits `DAILY_BONUS_POINTS` (1,000) once
+`wallets.next_daily_bonus_at` has passed. The check and the credit are one
+statement, so parallel claims pay once:
+
+```sql
+UPDATE wallets
+SET balance = balance + $points, next_daily_bonus_at = now() + $interval, updated_at = now()
+WHERE user_id = $me AND next_daily_bonus_at <= now()
+RETURNING balance, next_daily_bonus_at;
+```
+
+The same database transaction inserts a DAILY_BONUS ledger row with
+`balance_after`. No row returned means `409 DAILY_BONUS_NOT_READY`. The next
+time is always claim time + interval, so missed days never stack. The migration
+set existing wallets to claim immediately; new wallets wait one interval.
+Rolling 000010 back fails once DAILY_BONUS rows exist, preserving the ledger.
 
 ## Frontend-derived fields and rankings
 
@@ -216,7 +241,7 @@ immutability trigger or separate DB permissions are added at this stage.
 - Community netProfit: sum(payout - amount) for final positions in that community.
   Refunded positions contribute zero; pending stakes are not realized losses.
 - Prediction counts are per user/market, not per added position.
-- Refill/initial grants do not affect community netProfit.
+- Signup and daily bonuses do not affect community netProfit.
 - Use (created_at, id) descending cursors for history/feed queries.
 
 Indexes support membership lookups, community feeds, deadlines, user position
@@ -225,8 +250,7 @@ implementing actual queries rather than adding speculative indexes now.
 
 ## Contract decisions to confirm before those features
 
-1. POINT_REFILL extends TransactionType in the draft; its endpoint, amount,
-   cooldown, and eligibility are not yet specified.
+1. Resolved: POINT_REFILL was replaced by the daily bonus (see above).
 2. The draft permits community admins to resolve/cancel, while the original
    discussion allowed only the assigned moderator. Schema supports either rule.
 3. The draft lets any member create markets but defaults moderatorId to the
@@ -241,7 +265,7 @@ services must not silently choose incompatible behavior.
 
 ## Verification and references
 
-Run `PG_BIN=/path/to/postgresql/bin bash scripts/test-migrations.sh` from backend.
+Run `PG_BIN=/path/to/postgresql/bin bash scripts/test-migrations.sh` from the repository root.
 This creates a separate local cluster and exercises apply, constraint violations,
 a representative point lifecycle fixture, rollback, and reapply. The fixture
 tests storage, not unimplemented service authorization/concurrency or calculator

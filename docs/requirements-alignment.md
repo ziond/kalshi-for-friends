@@ -2,7 +2,8 @@
 
 Source: repository `docs/api-contract.md` and `docs/requirements.md`, also supplied
 by Owen. This is implementation status, not a claim that full-stack acceptance
-has passed. No production/shared database was changed during implementation.
+has passed. The shared Supabase development database has migrations 000001–000010
+applied (2026-09-27).
 
 ## Implemented in this change
 
@@ -10,12 +11,14 @@ has passed. No production/shared database was changed during implementation.
 | --- | --- | --- |
 | AUTH-07,13–15,19–20 | Ed25519 PEM pair validation, access/refresh JWT cookies, PostgreSQL refresh hash registry, atomic single-use rotation and logout revocation | Unit tests; database concurrency test added, not yet run |
 | COM-01–07,10–13,19; DSC; INV | Explicit visibility, public discovery/join, moderator selection, private access checks, invite preview, code replacement | Existing integration suite updated; live verification pending |
-| WAL-03–05,07–10 | Integer deposit validation, atomic wallet/ledger update, configurable deposit switch, wallet and transaction reads | Integration test added |
+| WAL-07–09 | Atomic wallet/ledger updates, wallet and transaction reads | `lifecycle_test` |
+| AUTH-05; WAL-08,11,12; DATA-01,08; SEC-03 | Daily bonus: `POST /me/daily-bonus` credits `DAILY_BONUS_POINTS` (1,000) when `next_daily_bonus_at` has passed, in one conditional `UPDATE` plus a DAILY_BONUS ledger row; early claims get `409 DAILY_BONUS_NOT_READY` ("Your next 1,000 points are ready in 5h 12m"); missed days don't stack; first bonus opens `DAILY_BONUS_HOURS` (24) after signup; `nextDailyBonusAt` on `Me`; deposit endpoint and `DEPOSITS_ENABLED` removed (WAL-03–05,10 withdrawn); migration 000010 | `daily_bonus_test` (incl. 8 parallel claims → one credit), `points_test`, `config_test`; migration 000010 up/down/up verified on PostgreSQL 18 (2026-09-27) |
+| INV-06,07; SEC-10 | Public invite lookup `GET /public/invites/:code`: no sign-in, returns only name, visibility and member count, `404 INVALID_INVITE_CODE`, `Cache-Control: public, max-age=300`, 120 requests/min per IP | `router_test` (`TestCommunityLifecycle`), `rate_limit_test`; checked live against the shared database |
 | MKT; ODD; FEED | Member-only creation, validated options/deadlines, public/private feeds, server search, probabilities and immutable-position-derived history | Integration test added |
 | BET; ACT; USR-03–04 | Member-only bets; market/wallet locks; no option switching; balance/pool/ledger atomicity; paginated activity and positions | Lifecycle and concurrent-bet tests added |
 | LCK; RES; DATA-01–05 | Computed deadline locking, moderator checks, locked-only settlement, sorted wallet locks, one settlement, exact payouts/refunds | Exact arithmetic unit tests pass; database race tests added |
 | MOD; LDR-01–02 | Mod queue, community net-profit leaderboard, one prediction per settled market; refunds excluded | Integration paths added |
-| SEC-07,09 | Per-process authentication throttle, JSON mutation bodies, explicit origin checks | Origin unit test; live proxy check pending |
+| SEC-07,09 | Per-process authentication throttle (30/min per IP), JSON mutation bodies, explicit origin checks | Origin unit test; live proxy check pending |
 | RES-05,07,08,10,16–19; LCK-01; MOD-01; DATA-07; API-09 (no-store) | Payout grace period: a pick moves the market to PAYOUT_PENDING with `payoutAt` and moves no points; the pick is final (second pick → `MARKET_CLOSED` "A winner has already been picked. You can only nullify this market"); nullify allowed until the payout; payout job every 5 s plus payout-on-read; row-locked so a payout and a nullify never both happen; `payoutAt`/`paidOutAt`, `ModQueue.payoutPending`, `Cache-Control: no-store` on polled reads; migration 000009 | `grace_period_test`, updated `lifecycle_test`, `config_test` and `tests/schema.sql` pass against PostgreSQL 16.4 (2026-09-27); migration 000009 up/down/up verified, including rollback with a market mid-grace-period |
 
 ## Decisions / limitations
@@ -63,25 +66,29 @@ has passed. No production/shared database was changed during implementation.
 
 ## Safe verification before restart/push
 
-From backend/, run in Warp (creates an isolated temporary PostgreSQL cluster):
+From the repository root (creates an isolated temporary PostgreSQL cluster):
 
 ```sh
 PG_BIN=/Applications/Postgres.app/Contents/Versions/16/bin RUN_API_TESTS=1 bash scripts/test-migrations.sh
 ```
 
 The script never uses the shared database URL. Tests truncate data only in that
-temporary cluster. This sandbox cannot initialize PostgreSQL shared memory, so
-the integration suite could not be executed here. Do not label it passed yet.
+temporary cluster. On Windows, start a throwaway cluster with the PostgreSQL
+`initdb`/`pg_ctl` binaries instead, apply the migrations with `migrate`, and run
+`TEST_DATABASE_URL=… go test -p 1 ./...`; the full suite passed this way on
+PostgreSQL 18 on 2026-09-27.
 
-After tests pass and Owen approves applying migrations, apply 000005–000007 to
-and 000008 to the shared database with the migration owner. The application role additionally
-needs `GRANT SELECT, INSERT, DELETE ON refresh_tokens TO kalshi_app;`.
-Apply 000009 (payout grace period) before restarting the API that expects it.
-The API now updates and deletes settlements, so the application role also needs
-`GRANT UPDATE, DELETE ON settlements TO kalshi_app;` if it doesn't have them yet.
-Do not restart the updated API before migrations and permissions are in place.
-Migration 000007 rollback intentionally fails if DEPOSIT ledger rows exist;
-it never deletes or relabels financial history to make rollback succeed.
+Known fixture issue: `tests/schema.sql` line 184 expects SQLSTATE 23503 when
+deleting a user, but the `ON DELETE RESTRICT` foreign keys raise 23001. The
+constraint behaves correctly; the expected code in the fixture needs updating.
+
+The shared Supabase database is at migration 000010. Apply new migrations there
+before restarting an API that expects them. The API connects as the Supabase
+`postgres` role, which owns the tables, so no extra grants are needed; with a
+separate `kalshi_app` role it needs `GRANT SELECT, INSERT, DELETE ON refresh_tokens`
+and `GRANT UPDATE, DELETE ON settlements`. Migrations 000007 and 000010 refuse
+rollback once DEPOSIT or DAILY_BONUS ledger rows exist; they never delete or
+relabel financial history to make rollback succeed.
 
 Run requirements E2E-1 through E2E-8 against the frontend proxy with mocks off.
 Do not share private.pem. No push is authorized by this document.
