@@ -19,6 +19,11 @@ export interface Me extends UserSummary, UserStats {
   email: string;
   /** Joined from wallets so the navbar needs a single call. */
   balance: number;
+  /**
+   * When the next daily bonus can be claimed; claimable once this is in the past.
+   * signup + 24 hours at first, then last claim + 24 hours.
+   */
+  nextDailyBonusAt: ISODate;
   createdAt: ISODate;
 }
 

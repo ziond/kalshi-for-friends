@@ -54,7 +54,13 @@ export const TrophyIcon = (p: IconProps) => (
     <path d="M12 13v4M8.5 20.5h7M10 17h4l.5 3.5h-5Z" />
   </Icon>
 );
-export const SearchIcon =(p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Icon>;
+export const GiftIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="8" width="18" height="4" rx="1" /><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8" />
+    <path d="M12 8C10.5 4.5 7 4 6.5 6s2 2 5.5 2M12 8c1.5-3.5 5-4 5.5-2s-2 2-5.5 2" />
+  </Icon>
+);
+export const SearchIcon = (p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Icon>;
 export const PlusIcon = (p: IconProps) => <Icon {...p}><path d="M12 5v14M5 12h14" /></Icon>;
 
 // Bottom navigation

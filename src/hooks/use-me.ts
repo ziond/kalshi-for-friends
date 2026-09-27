@@ -37,15 +37,17 @@ export function useModQueue() {
   });
 }
 
-export function useDeposit() {
+export function useClaimDailyBonus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: meApi.deposit,
-    onSuccess: (wallet) => {
-      qc.setQueryData<Me>(queryKeys.me.profile(), (me) => (me ? { ...me, balance: wallet.balance } : me));
-      qc.setQueryData(queryKeys.me.wallet(), wallet);
+    mutationFn: meApi.claimDailyBonus,
+    onSuccess: ({ balance, nextDailyBonusAt }) => {
+      qc.setQueryData<Me>(queryKeys.me.profile(), (me) => (me ? { ...me, balance, nextDailyBonusAt } : me));
+      qc.invalidateQueries({ queryKey: queryKeys.me.wallet() });
       qc.invalidateQueries({ queryKey: queryKeys.me.transactions() });
     },
+    // Claimed elsewhere (another tab or device): pick up the real balance and next time.
+    onError: () => qc.invalidateQueries({ queryKey: queryKeys.me.profile() }),
   });
 }
 

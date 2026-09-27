@@ -21,7 +21,7 @@ export function RegisterForm({ nextPath }: { nextPath: string }) {
       }}
     >
       <h1 className="text-2xl font-bold tracking-tight">Join called it.</h1>
-      <p className="-mt-2 text-sm text-muted">Everyone starts with 1,000 points.</p>
+      <p className="-mt-2 text-sm text-muted">Everyone starts with 1,000 points, plus 1,000 more every day.</p>
       <Field label="Username">
         <input required maxLength={50} autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} />
       </Field>

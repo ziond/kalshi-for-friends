@@ -1,5 +1,5 @@
 import type {
-  DepositRequest,
+  DailyBonusResponse,
   ID,
   LoginRequest,
   Me,
@@ -31,7 +31,8 @@ export const meApi = {
   positions: (params?: PositionListParams) =>
     api.get<Paginated<Position>>("/me/positions", { query: { ...params } }),
   wallet: () => api.get<Wallet>("/me/wallet"),
-  deposit: (body: DepositRequest) => api.post<Wallet>("/me/wallet/deposit", body),
+  /** Claim the daily points; 409 DAILY_BONUS_NOT_READY before nextDailyBonusAt. */
+  claimDailyBonus: () => api.post<DailyBonusResponse>("/me/daily-bonus"),
   modQueue: () => api.get<ModQueue>("/me/mod-queue"),
   transactions: (params?: PaginationParams) =>
     api.get<Paginated<Transaction>>("/me/transactions", { query: { ...params } }),

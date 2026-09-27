@@ -12,7 +12,7 @@ import type {
   Paginated,
   PlacePositionResponse,
   Position,
-  Wallet,
+  DailyBonusResponse,
 } from "@/types";
 import { communitiesApi, marketsApi, meApi } from "@/lib/api";
 import { ApiError } from "../errors";
@@ -32,14 +32,42 @@ describe("current user & wallet", () => {
     expect(me.balance).toBe(4820);
   });
 
-  it("adds points on deposit", async () => {
-    const wallet: Wallet = await meApi.deposit({ amount: 2500 });
-    expect(wallet.balance).toBe(7320);
-    expect((await meApi.get()).balance).toBe(7320);
+  it("adds the daily 1,000 points once and restarts the 24-hour timer", async () => {
+    const before = await meApi.get();
+    expect(Date.parse(before.nextDailyBonusAt)).toBeLessThanOrEqual(Date.now()); // demo user: ready now
+
+    const claimed: DailyBonusResponse = await meApi.claimDailyBonus();
+
+    expect(claimed).toMatchObject({ amount: 1000, balance: 4820 + 1000 });
+    expect(Date.parse(claimed.nextDailyBonusAt) - Date.now()).toBeGreaterThan(24 * 3_600_000 - 5_000);
+    const after = await meApi.get();
+    expect(after).toMatchObject({ balance: 5820, nextDailyBonusAt: claimed.nextDailyBonusAt });
   });
 
-  it.each([0, -5, 1.5, 1_000_001])("rejects a deposit of %s", async (amount) => {
-    await expectApiError(meApi.deposit({ amount }), "VALIDATION_ERROR");
+  it("refuses a second claim within 24 hours and says when the next one opens", async () => {
+    await meApi.claimDailyBonus();
+    const error = await meApi.claimDailyBonus().then(() => null, (e: ApiError) => e);
+    expect(error).toMatchObject({ status: 409, code: "DAILY_BONUS_NOT_READY", message: expect.stringMatching(/ready in 2[34]h/) });
+    expect((await meApi.get()).balance).toBe(5820);
+  });
+
+  it("doesn't stack missed days", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await meApi.claimDailyBonus();
+      vi.setSystemTime(Date.now() + 3 * 24 * 3_600_000); // away for three days
+
+      await meApi.claimDailyBonus();
+      expect((await meApi.get()).balance).toBe(4820 + 2 * 1000); // one drop waiting, not three
+      await expectApiError(meApi.claimDailyBonus(), "DAILY_BONUS_NOT_READY");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("no longer accepts free top-ups", async () => {
+    const { mockRequest } = await import("./handlers");
+    await expectApiError(mockRequest("POST", "/me/wallet/deposit", {}, { amount: 1000 }), "NOT_FOUND");
   });
 });
 

@@ -2,7 +2,7 @@
 
 import { act, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AddPoints } from "@/components/add-points";
+import { PointsPill } from "@/components/points-pill";
 import { LIVE_POLL_MS } from "@/hooks/use-markets";
 import { marketsApi } from "@/lib/api";
 import { markets, positions, users } from "@/lib/api/mock/db";
@@ -18,7 +18,7 @@ const nextPoll = () => act(() => vi.advanceTimersByTimeAsync(LIVE_POLL_MS));
 /** The market page plus the nav's balance pill, which keeps the current user query active. */
 function renderMarket(id: number) {
   navigation.params = { marketId: String(id) };
-  return renderWithClient(<><AddPoints /><MarketPage /></>);
+  return renderWithClient(<><PointsPill /><MarketPage /></>);
 }
 
 beforeEach(() => {

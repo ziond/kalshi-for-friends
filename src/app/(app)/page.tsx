@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { CommunityRow } from "@/components/community-row";
 import { ArrowUpRightIcon, FlameIcon, GlobeIcon, SearchIcon, TrendingUpIcon } from "@/components/icons";
 import { MarketCard, MarketGrid } from "@/components/market-card";
+import { DailyBonusCard } from "@/components/points-pill";
 import { EmptyState, Eyebrow, SectionHeader, SectionLink, Skeleton, inputClass } from "@/components/ui";
 import { useCommunities } from "@/hooks/use-communities";
 import { useMarketFeed } from "@/hooks/use-markets";
@@ -106,6 +107,7 @@ export default function HomePage() {
         <p className="mt-1 text-[15px] text-muted">Your friends are making some bold predictions.</p>
       </header>
 
+      <DailyBonusCard />
       <HeroCard />
 
       <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">

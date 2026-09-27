@@ -60,6 +60,8 @@ describe("formatCountdown", () => {
     expect(formatCountdown("2026-09-27T12:05:00Z", now)).toBe("5:00");
     expect(formatCountdown("2026-09-27T12:00:07.2Z", now)).toBe("0:08");
     expect(formatCountdown("2026-09-27T11:59:00Z", now)).toBe("0:00");
+    expect(formatCountdown("2026-09-28T11:59:48Z", now)).toBe("23:59:48");
+    expect(formatCountdown("2026-09-27T13:00:05Z", now)).toBe("1:00:05");
   });
 
   it("labels markets in their payout grace period", () => {

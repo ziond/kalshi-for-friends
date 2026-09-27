@@ -20,6 +20,8 @@ export type MarketStatus = "OPEN" | "LOCKED" | "PAYOUT_PENDING" | "RESOLVED" | "
 
 export type TransactionType =
   | "INITIAL_BONUS"
+  | "DAILY_BONUS"
+  /** Legacy: free top-ups from before the daily bonus. No longer created. */
   | "DEPOSIT"
   | "PLACE_POSITION"
   | "WIN_REWARD"
@@ -48,6 +50,7 @@ export type ApiErrorCode =
   | "ALREADY_MEMBER"
   | "INVALID_INVITE_CODE"
   | "OPTION_SWITCH_NOT_ALLOWED"
+  | "DAILY_BONUS_NOT_READY"
   /** Frontend-only: the API answered with something that isn't JSON. Never sent by the backend. */
   | "BAD_RESPONSE";
 

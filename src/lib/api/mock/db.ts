@@ -97,6 +97,8 @@ const uid = (name: string) => users.find((u) => u.username === name)!.id;
 /** The logged-in user in mock mode. */
 export const ME = uid("Jordan");
 export const wallet = { balance: 4820, updatedAt: iso(now) };
+/** The demo user's next daily bonus: already claimable, so the feature shows up straight away. */
+export const dailyBonus = { nextAt: iso(now - 60_000) };
 
 // ---- communities ----
 
@@ -283,7 +285,7 @@ export const markets: MarketRow[] = [
 
 // ---- reset (used by tests) ----
 
-const seed = structuredClone({ users, communities, markets, positions, wallet, optionSeq, positionSeq });
+const seed = structuredClone({ users, communities, markets, positions, wallet, dailyBonus, optionSeq, positionSeq });
 
 function refill<T>(target: T[], source: T[]) {
   target.splice(0, target.length, ...structuredClone(source));
@@ -296,6 +298,7 @@ export function resetMockDb() {
   refill(markets, seed.markets);
   refill(positions, seed.positions);
   Object.assign(wallet, seed.wallet);
+  Object.assign(dailyBonus, seed.dailyBonus);
   optionSeq = seed.optionSeq;
   positionSeq = seed.positionSeq;
 }

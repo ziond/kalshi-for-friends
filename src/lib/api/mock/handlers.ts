@@ -9,7 +9,7 @@ import type {
   CommunitySummary,
   CreateCommunityRequest,
   CreateMarketRequest,
-  DepositRequest,
+  DailyBonusResponse,
   ID,
   InvitePreview,
   LeaderboardEntry,
@@ -27,11 +27,12 @@ import type {
   Role,
   UserSummary,
 } from "@/types";
-import { MAX_DEPOSIT, PAYOUT_GRACE_MINUTES } from "@/types";
+import { DAILY_BONUS_POINTS, PAYOUT_GRACE_MINUTES } from "@/types";
 import { ApiError } from "../errors";
 import {
   ME,
   communities,
+  dailyBonus,
   markets,
   nextIds,
   positions,
@@ -219,6 +220,7 @@ function me(): Me {
     ...user(ME),
     email: u.email,
     balance: wallet.balance,
+    nextDailyBonusAt: dailyBonus.nextAt,
     predictionScore: 72.5,
     totalPredictions: settled.length,
     correctPredictions: correct,
@@ -261,15 +263,18 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/me$/, () => me()],
   ["GET", /^\/me\/wallet$/, () => wallet],
 
-  ["POST", /^\/me\/wallet\/deposit$/, (_, __, body) => {
-    const { amount } = body as DepositRequest;
-    if (!Number.isInteger(amount) || amount < 1 || amount > MAX_DEPOSIT) {
-      throw new ApiError(400, "VALIDATION_ERROR", `Enter a whole number from 1 to ${MAX_DEPOSIT.toLocaleString()}`,
-        { amount: "Invalid amount" });
+  // One claim per 24 hours; missed days don't stack. The timer restarts from the claim.
+  ["POST", /^\/me\/daily-bonus$/, (): DailyBonusResponse => {
+    const waitMs = Date.parse(dailyBonus.nextAt) - Date.now();
+    if (waitMs > 0) {
+      const h = Math.floor(waitMs / 3_600_000);
+      const m = Math.ceil((waitMs % 3_600_000) / 60_000);
+      throw new ApiError(409, "DAILY_BONUS_NOT_READY", `Your next ${DAILY_BONUS_POINTS.toLocaleString()} points are ready in ${h ? `${h}h ` : ""}${m}m`);
     }
-    wallet.balance += amount;
+    wallet.balance += DAILY_BONUS_POINTS;
     wallet.updatedAt = nowIso();
-    return wallet;
+    dailyBonus.nextAt = new Date(Date.now() + 24 * 3_600_000).toISOString();
+    return { amount: DAILY_BONUS_POINTS, balance: wallet.balance, nextDailyBonusAt: dailyBonus.nextAt };
   }],
   ["GET", /^\/me\/transactions$/, (_, q) => page([], q)],
 

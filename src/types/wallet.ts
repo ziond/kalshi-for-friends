@@ -5,13 +5,21 @@ export interface Wallet {
   updatedAt: ISODate;
 }
 
-/** MVP only: users top up their own balance with any amount. */
-export interface DepositRequest {
-  /** Whole points, 1 to MAX_DEPOSIT. */
-  amount: number;
-}
+/** Points every new account starts with (INITIAL_BONUS). */
+export const SIGNUP_BONUS_POINTS = 1_000;
 
-export const MAX_DEPOSIT = 1_000_000;
+/** Points a user can claim once every 24 hours (DAILY_BONUS). Missed days don't stack. */
+export const DAILY_BONUS_POINTS = 1_000;
+
+/** POST /me/daily-bonus */
+export interface DailyBonusResponse {
+  /** Points added (DAILY_BONUS_POINTS). */
+  amount: number;
+  /** New wallet balance. */
+  balance: number;
+  /** When the next claim opens: now + 24 hours. */
+  nextDailyBonusAt: ISODate;
+}
 
 export interface TransactionReference {
   type: "POSITION" | "MARKET";

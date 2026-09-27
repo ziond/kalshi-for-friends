@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useMe, useModQueue } from "@/hooks/use-me";
 import { initial } from "@/lib/format";
-import { AddPoints } from "./add-points";
+import { PointsPill } from "./points-pill";
 import { CompassIcon, HomeIcon, PlusCircleIcon, PlusIcon, ShieldIcon, UserIcon, UsersIcon } from "./icons";
 import { cn } from "./ui";
 
@@ -126,7 +126,7 @@ export function TopNav() {
           <div className="hidden md:block">
             <CreateMenu />
           </div>
-          <AddPoints />
+          <PointsPill />
           <Link href="/profile" aria-label="Your profile"
             className="flex size-9 items-center justify-center rounded-full bg-purple text-sm font-bold text-on-lime">
             {me ? initial(me.username) : ""}
