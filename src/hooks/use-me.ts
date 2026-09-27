@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi, meApi } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import { LIVE_POLL_MS } from "./use-markets";
 import type { Me, PositionListParams } from "@/types";
 
 export function useMe() {
@@ -28,7 +29,12 @@ export function useMyPositions(params?: PositionListParams) {
 }
 
 export function useModQueue() {
-  return useQuery({ queryKey: queryKeys.me.modQueue(), queryFn: meApi.modQueue });
+  return useQuery({
+    queryKey: queryKeys.me.modQueue(),
+    queryFn: meApi.modQueue,
+    // Keep countdowns honest while a payout is pending (it may be paid out or nullified).
+    refetchInterval: (query) => (query.state.data?.payoutPending.length ? LIVE_POLL_MS : false),
+  });
 }
 
 export function useDeposit() {

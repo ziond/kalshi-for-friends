@@ -7,6 +7,7 @@ import { CommunityChip, ProbabilityBar, cn } from "./ui";
 const STATUS_LABEL: Record<MarketStatus, string> = {
   OPEN: "Live market",
   LOCKED: "Awaiting result",
+  PAYOUT_PENDING: "Paying out",
   RESOLVED: "Resolved",
   CANCELLED: "Nullified",
 };
@@ -14,6 +15,9 @@ const STATUS_LABEL: Record<MarketStatus, string> = {
 function StatusNote({ market }: { market: MarketSummary }) {
   if (market.status === "CANCELLED") {
     return <span className="text-faint">Nullified · refunded</span>;
+  }
+  if (market.status === "PAYOUT_PENDING") {
+    return <span className="text-orange">Winner picked · paying out soon</span>;
   }
   if (market.status === "RESOLVED") {
     const winner = market.options.find((o) => o.isWinner);

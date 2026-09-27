@@ -44,12 +44,22 @@ export interface MarketSummary {
   moderator: UserSummary;
   /** null if the current user hasn't bet. */
   myStake: MyStake | null;
+  /** When payouts go (or went) out: set once the moderator picks a winner, otherwise null. */
+  payoutAt: ISODate | null;
 }
+
+/** Minutes between the moderator picking a winner and the payout. They can still nullify until then. */
+export const PAYOUT_GRACE_MINUTES = 5;
 
 export interface Settlement {
   winningOptionId: ID;
   resolvedBy: UserSummary;
+  /** When the moderator picked the winner. */
   resolvedAt: ISODate;
+  /** resolvedAt + PAYOUT_GRACE_MINUTES. */
+  payoutAt: ISODate;
+  /** null during the grace period (status PAYOUT_PENDING). */
+  paidOutAt: ISODate | null;
   notes: string | null;
 }
 
@@ -114,6 +124,8 @@ export interface MarketListParams extends PaginationParams {
 export interface ModQueue {
   /** Closed (LOCKED) and waiting for a resolve/cancel decision. */
   pending: MarketSummary[];
+  /** Winner picked, inside the grace period (PAYOUT_PENDING); can still be nullified. */
+  payoutPending: MarketSummary[];
   /** Still OPEN. */
   active: MarketSummary[];
 }

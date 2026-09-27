@@ -1,7 +1,7 @@
 // The mock API stands in for the Go backend, so these tests pin down the
 // contract rules the UI relies on (docs/api-contract.md).
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   CommunityDetail,
   InvitePreview,
@@ -114,29 +114,94 @@ describe("moderation", () => {
     await expectApiError(marketsApi.resolve(7, { winningOptionId: market.options[0].id }), "FORBIDDEN");
   });
 
-  it("resolves, marks the winner and empties the queue", async () => {
+  it("picks a winner and starts the grace period without paying anyone", async () => {
     const market = await marketsApi.get(9);
-    const resolved: MarketDetail = await marketsApi.resolve(9, { winningOptionId: market.options[0].id });
+    const picked: MarketDetail = await marketsApi.resolve(9, { winningOptionId: market.options[0].id });
 
-    expect(resolved.status).toBe("RESOLVED");
-    expect(resolved.options.map((o) => o.isWinner)).toEqual([true, false, false]);
-    expect((await meApi.modQueue()).pending).toHaveLength(0);
+    expect(picked.status).toBe("PAYOUT_PENDING");
+    expect(picked.options.map((o) => o.isWinner)).toEqual([null, null, null]); // not final yet
+    expect(Date.parse(picked.settlement!.payoutAt) - Date.parse(picked.settlement!.resolvedAt)).toBe(5 * 60_000);
+    expect(picked.settlement!.paidOutAt).toBeNull();
+    expect(picked.payoutAt).toBe(picked.settlement!.payoutAt);
+    expect(picked.permissions).toMatchObject({ canResolve: false, canCancel: true });
+
+    const queue = await meApi.modQueue();
+    expect(queue.pending).toHaveLength(0);
+    expect(queue.payoutPending.map((m) => m.id)).toEqual([9]);
   });
 
-  it("pays winners from the whole pool", async () => {
-    // Jordan backs "Yes" on market 2, which Mina moderates; resolve it as Mina would.
-    const { markets } = await import("./db");
-    const row = markets.find((m) => m.id === 2)!;
-    row.moderatorId = 1;
-    row.deadline = new Date(Date.now() - 1000).toISOString();
+  describe("grace period", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    const market = await marketsApi.get(2);
-    const expected = market.myStake!.potentialPayout;
-    await marketsApi.resolve(2, { winningOptionId: market.options[0].id });
+    /** Jordan backs "Yes" (200 pts) on market 2, which Mina moderates; let Jordan moderate it once closed. */
+    async function closedMarketWithMyStake() {
+      const { markets } = await import("./db");
+      const row = markets.find((m) => m.id === 2)!;
+      row.moderatorId = 1;
+      row.deadline = new Date(Date.now() - 1000).toISOString();
+      return marketsApi.get(2);
+    }
 
-    expect((await meApi.get()).balance).toBe(4820 + expected);
-    const settled: Paginated<Position> = await meApi.positions({ status: "settled" });
-    expect(settled.items.find((p) => p.market.id === 2)).toMatchObject({ result: "WON", payout: expected });
+    const skipGracePeriod = () => vi.setSystemTime(Date.now() + 5 * 60_000 + 1000);
+
+    it("pays winners from the whole pool once it ends", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const market = await closedMarketWithMyStake();
+      const expected = market.myStake!.potentialPayout;
+
+      await marketsApi.resolve(2, { winningOptionId: market.options[0].id });
+      expect((await meApi.get()).balance).toBe(4820); // nothing paid during the grace period
+
+      skipGracePeriod();
+      expect((await meApi.get()).balance).toBe(4820 + expected); // paid on the next request, any endpoint
+      const settled: Paginated<Position> = await meApi.positions({ status: "settled" });
+      expect(settled.items.find((p) => p.market.id === 2)).toMatchObject({ result: "WON", payout: expected });
+      const resolved = await marketsApi.get(2);
+      expect(resolved.status).toBe("RESOLVED");
+      expect(resolved.options.map((o) => o.isWinner)).toEqual([true, false]);
+      expect(resolved.settlement!.paidOutAt).not.toBeNull();
+      expect(resolved.permissions.canCancel).toBe(false);
+    });
+
+    it("lets the moderator nullify before the payout, refunding everyone for good", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const market = await closedMarketWithMyStake();
+      await marketsApi.resolve(2, { winningOptionId: market.options[0].id });
+
+      const cancelled = await marketsApi.cancel(2, {});
+      expect(cancelled.status).toBe("CANCELLED");
+      expect(cancelled.settlement).toBeNull();
+      expect((await meApi.get()).balance).toBe(4820 + 200);
+
+      skipGracePeriod(); // the old payout time passes: nothing happens
+      expect((await meApi.get()).balance).toBe(4820 + 200);
+      expect((await marketsApi.get(2)).status).toBe("CANCELLED");
+      await expectApiError(marketsApi.resolve(2, { winningOptionId: market.options[0].id }), "MARKET_CLOSED");
+    });
+
+    it("never lets the moderator switch the pick; they can only nullify", async () => {
+      const market = await marketsApi.get(9);
+      await marketsApi.resolve(9, { winningOptionId: market.options[0].id });
+
+      for (const option of market.options) { // another outcome, or the same one again
+        const error = await marketsApi.resolve(9, { winningOptionId: option.id }).then(() => null, (e: ApiError) => e);
+        expect(error).toMatchObject({ code: "MARKET_CLOSED", message: "A winner has already been picked. You can only nullify this market" });
+      }
+      const stillPending = await marketsApi.get(9);
+      expect(stillPending.settlement!.winningOptionId).toBe(market.options[0].id);
+      expect(stillPending.permissions).toMatchObject({ canResolve: false, canCancel: true });
+      expect((await marketsApi.cancel(9, {})).status).toBe("CANCELLED");
+    });
+
+    it("doesn't allow nullifying after the payout", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const market = await marketsApi.get(9);
+      await marketsApi.resolve(9, { winningOptionId: market.options[0].id });
+      skipGracePeriod();
+      await expectApiError(marketsApi.cancel(9, {}), "MARKET_CLOSED");
+    });
   });
 
   it("refunds everyone when a market is nullified", async () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { avatarColor, formatPercent, formatPoints, formatRelative, formatTimeLeft, initial } from "./format";
+import { avatarColor, formatCountdown, formatPercent, formatPoints, formatRelative, formatTimeLeft, initial } from "./format";
 
 describe("formatPoints", () => {
   it("abbreviates thousands and drops a trailing .0", () => {
@@ -51,6 +51,19 @@ describe("formatRelative", () => {
     expect(formatRelative(ago(40 * 60_000))).toBe("40m ago");
     expect(formatRelative(ago(5 * 3_600_000))).toBe("5h ago");
     expect(formatRelative(ago(2 * 86_400_000))).toBe("2d ago");
+  });
+});
+
+describe("formatCountdown", () => {
+  it("shows minutes and seconds left, never negative", () => {
+    const now = Date.parse("2026-09-27T12:00:00Z");
+    expect(formatCountdown("2026-09-27T12:05:00Z", now)).toBe("5:00");
+    expect(formatCountdown("2026-09-27T12:00:07.2Z", now)).toBe("0:08");
+    expect(formatCountdown("2026-09-27T11:59:00Z", now)).toBe("0:00");
+  });
+
+  it("labels markets in their payout grace period", () => {
+    expect(formatTimeLeft(new Date().toISOString(), "PAYOUT_PENDING")).toBe("Paying out");
   });
 });
 

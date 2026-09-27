@@ -106,7 +106,7 @@ export function VisibilityBadge({ visibility, className }: { visibility: Visibil
 }
 
 /** Small uppercase status pill with a dot, e.g. LIVE. */
-export function StatusPill({ tone, children }: { tone: "live" | "muted" | "no"; children: ReactNode }) {
+export function StatusPill({ tone, children }: { tone: "live" | "muted" | "no" | "orange"; children: ReactNode }) {
   return (
     <span
       className={cn(
@@ -114,6 +114,7 @@ export function StatusPill({ tone, children }: { tone: "live" | "muted" | "no"; 
         tone === "live" && "bg-live/12 text-live",
         tone === "muted" && "bg-raised text-muted",
         tone === "no" && "bg-no/12 text-no",
+        tone === "orange" && "bg-orange/12 text-orange",
       )}
     >
       <span className="size-2 rounded-full bg-current" />

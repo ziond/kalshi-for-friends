@@ -22,9 +22,20 @@ describe("Mod Queue", () => {
 
     await user.click(within(pending).getByRole("button", { name: "Sam K." }));
 
+    // Winner picked: it moves to "Paying out soon" with a countdown, and can still be nullified.
+    expect(await within(pending).findByText("Paying out soon · 1")).toBeInTheDocument();
+    expect(within(pending).getByText(/^Payout in [45]:\d\d$/)).toBeInTheDocument();
+    expect(markets.find((m) => m.id === 9)!.status).toBe("PAYOUT_PENDING");
+    // Only nullify is offered now: the outcome buttons are gone.
+    for (const name of ["Priya N.", "Sam K.", "Jordan"]) {
+      expect(within(pending).queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+
+    await user.click(within(pending).getByRole("button", { name: "Nullify" }));
+
     expect(await within(pending).findByText("All caught up.")).toBeInTheDocument();
     expect(within(pending).getByRole("link", { name: /Back to your communities/ })).toHaveAttribute("href", "/communities");
-    expect(markets.find((m) => m.id === 9)!.status).toBe("RESOLVED");
+    expect(markets.find((m) => m.id === 9)!.status).toBe("CANCELLED");
 
     await user.click(screen.getByRole("button", { name: "Active markets" }));
     const active = screen.getByRole("region", { name: "Active markets" });

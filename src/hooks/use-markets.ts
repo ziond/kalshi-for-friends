@@ -31,12 +31,12 @@ export function useCommunityMarkets(communityId: ID, params?: MarketListParams) 
 }
 
 // MVP "real time": while a market can still change (bets on OPEN, a moderator's call on
-// LOCKED), its page polls. React Query pauses polling while the tab is hidden and refetches
+// LOCKED, a payout or nullify during PAYOUT_PENDING), its page polls. React Query pauses polling while the tab is hidden and refetches
 // on focus. Swap for a push channel (WebSocket/SSE) after the MVP.
 export const LIVE_POLL_MS = 5_000;
 
 export function isLive(status: MarketStatus | undefined) {
-  return status === "OPEN" || status === "LOCKED";
+  return status === "OPEN" || status === "LOCKED" || status === "PAYOUT_PENDING";
 }
 
 export function useMarket(marketId: ID) {

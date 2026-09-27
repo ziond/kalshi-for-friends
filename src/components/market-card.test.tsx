@@ -24,6 +24,7 @@ function makeMarket(overrides: Partial<MarketSummary> = {}): MarketSummary {
     creator: user(1, "Jordan"),
     moderator: user(2, "Sam K."),
     myStake: null,
+    payoutAt: null,
     ...overrides,
   };
 }

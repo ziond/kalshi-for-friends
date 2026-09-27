@@ -47,7 +47,7 @@ describe("Market page live updates", () => {
     expect(await screen.findByText("Sam K. bet 5000 pts on Yes")).toBeInTheDocument();
   });
 
-  it("picks up a resolution made elsewhere and refreshes the user's data", async () => {
+  it("picks up a resolution made elsewhere, then the payout, and refreshes the user's data", async () => {
     const { client } = renderMarket(9); // LOCKED, waiting on the moderator
     await screen.findByText(/you're the moderator/);
     await screen.findByRole("button", { name: /Balance 4,820 pts/ });
@@ -58,14 +58,20 @@ describe("Market page live updates", () => {
     await mockRequest("POST", "/markets/9/resolve", {}, { winningOptionId: priya.id }); // e.g. from another tab
     await nextPoll();
 
-    expect(await screen.findByText("Resolved: Priya N. — payouts settled.")).toBeInTheDocument();
+    // The pick shows up within one poll; the payout follows when the grace period ends.
+    expect(await screen.findByText(/You picked Priya N\./)).toBeInTheDocument();
     expect(screen.queryByText(/you're the moderator/)).not.toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(5 * 60_000));
+
+    expect(await screen.findByText("Resolved: Priya N. — payouts settled.")).toBeInTheDocument();
     await vi.waitFor(() => expect(meUpdates()).toBeGreaterThan(before)); // balance and stats refetched
   });
 
   it("stops polling once a market is settled", async () => {
     const priya = markets.find((m) => m.id === 9)!.options.find((o) => o.text === "Priya N.")!;
     await mockRequest("POST", "/markets/9/resolve", {}, { winningOptionId: priya.id });
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 1000); // grace period over: paid out on the next read
     const gets = vi.spyOn(marketsApi, "get");
     const activity = vi.spyOn(marketsApi, "activity");
 

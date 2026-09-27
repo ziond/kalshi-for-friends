@@ -17,6 +17,7 @@ export function formatPercent(probability: number): string {
 /** "3d left", "18h left", "Ends 8pm", "Ended", "Resolved", "Nullified" */
 export function formatTimeLeft(deadline: ISODate, status: MarketStatus): string {
   if (status === "RESOLVED") return "Resolved";
+  if (status === "PAYOUT_PENDING") return "Paying out";
   if (status === "CANCELLED") return "Nullified";
   const ms = Date.parse(deadline) - Date.now();
   if (status === "LOCKED" || ms <= 0) return "Ended";
@@ -28,6 +29,12 @@ export function formatTimeLeft(deadline: ISODate, status: MarketStatus): string 
   }
   if (ms < DAY) return `${Math.max(1, Math.round(ms / HOUR))}h left`;
   return `${Math.round(ms / DAY)}d left`;
+}
+
+/** Time left until `at` as "4:05" (m:ss), floored at "0:00". */
+export function formatCountdown(at: ISODate, now = Date.now()): string {
+  const seconds = Math.max(0, Math.ceil((Date.parse(at) - now) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 /** "40m ago", "5h ago", "2d ago" */

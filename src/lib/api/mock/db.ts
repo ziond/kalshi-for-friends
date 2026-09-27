@@ -51,7 +51,15 @@ export interface MarketRow {
   createdAt: string;
   options: OptionRow[];
   history: PricePoint[];
-  settlement: { winningOptionId: ID; resolvedById: ID; resolvedAt: string; notes: string | null } | null;
+  settlement: {
+    winningOptionId: ID;
+    resolvedById: ID;
+    resolvedAt: string;
+    /** Payouts happen at this time unless the market is nullified first. */
+    payoutAt: string;
+    paidOutAt: string | null;
+    notes: string | null;
+  } | null;
 }
 
 export interface PositionRow {

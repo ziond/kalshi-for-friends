@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { navigation } from "@/test/navigation";
 import { renderWithClient } from "@/test/render";
@@ -112,15 +112,22 @@ describe("Market page", () => {
       createdAt: new Date().toISOString(), result: "PENDING", payout: null,
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { user } = renderMarket(9);
 
     const panel = (await screen.findByText(/you're the moderator/)).parentElement!;
     await user.click(within(panel).getByRole("button", { name: "Validate: Priya N." }));
+    await screen.findByText(/You picked Priya N\./);
+    expect(screen.queryByRole("region", { name: "You called it" })).not.toBeInTheDocument(); // not until paid out
+
+    await act(() => vi.advanceTimersByTimeAsync(5 * 60_000 + 1000));
 
     const card = await screen.findByRole("region", { name: "You called it" });
     expect(within(card).getByText("You literally called it.")).toBeInTheDocument();
     expect(within(card).getByText(/^\+[\d,]+ points$/)).toBeInTheDocument();
     expect(within(card).getByText("Winner")).toBeInTheDocument();
+    expect(screen.getByText("Resolved: Priya N. — payouts settled.")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("hides betting and shows the moderator panel on an ended market you moderate", async () => {
@@ -132,8 +139,37 @@ describe("Market page", () => {
 
     await user.click(within(panel).getByRole("button", { name: "Validate: Priya N." }));
 
-    expect(await screen.findByText("Resolved: Priya N. — payouts settled.")).toBeInTheDocument();
-    expect(screen.queryByText(/you're the moderator/)).not.toBeInTheDocument();
+    // Grace period: nothing paid yet, the moderator can still nullify.
+    expect(await screen.findByText(/You picked Priya N\. — payouts go out in [45]:\d\d/)).toBeInTheDocument();
+    expect(screen.getByText(/Picked as winner · payout pending/)).toBeInTheDocument();
+    expect(screen.getAllByText("Paying out").length).toBeGreaterThan(0); // status pill and time line
+    expect(screen.queryByText(/payouts settled/)).not.toBeInTheDocument();
+    // The pick is final: no way to switch outcomes, only to nullify.
+    expect(screen.queryByRole("button", { name: /^Validate:/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/The pick can't be changed/)).toBeInTheDocument();
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("You can't switch to another outcome afterwards"));
+
+    await user.click(screen.getByRole("button", { name: "Nullify market" }));
+
+    expect(await screen.findByText("This market was nullified — all bets refunded.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Nullify market" })).not.toBeInTheDocument();
+  });
+
+  it("shows everyone else the pending payout with a countdown", async () => {
+    const { markets } = await import("@/lib/api/mock/db");
+    const row = markets.find((m) => m.id === 2)!; // moderated by someone else
+    const now = Date.now();
+    row.status = "PAYOUT_PENDING";
+    row.settlement = {
+      winningOptionId: row.options[0].id, resolvedById: row.moderatorId, resolvedAt: new Date(now).toISOString(),
+      payoutAt: new Date(now + 5 * 60_000).toISOString(), paidOutAt: null, notes: null,
+    };
+    renderMarket(2);
+
+    expect(await screen.findByText("Yes picked as the winner.")).toBeInTheDocument();
+    expect(screen.getByText(/Payouts go out in [45]:\d\d — the moderator can still nullify until then\./)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Nullify market" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Points to wager")).not.toBeInTheDocument();
   });
 
   it("nullifies a market and refunds bets", async () => {

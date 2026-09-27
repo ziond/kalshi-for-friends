@@ -12,7 +12,11 @@ export type Visibility = "PUBLIC" | "PRIVATE";
 
 export type MarketType = "BINARY" | "MULTIPLE_CHOICE";
 
-export type MarketStatus = "OPEN" | "LOCKED" | "RESOLVED" | "CANCELLED";
+/**
+ * OPEN → LOCKED (deadline passed) → PAYOUT_PENDING (moderator picked a winner; grace period)
+ * → RESOLVED (paid out). LOCKED and PAYOUT_PENDING can also go to CANCELLED (nullified, refunded).
+ */
+export type MarketStatus = "OPEN" | "LOCKED" | "PAYOUT_PENDING" | "RESOLVED" | "CANCELLED";
 
 export type TransactionType =
   | "INITIAL_BONUS"

@@ -20,7 +20,9 @@ function resultLabel(p: Position): { text: string; className: string } {
     case "REFUNDED":
       return { text: "Refunded", className: "text-faint" };
     default:
-      return { text: "Awaiting resolution", className: "text-orange" };
+      return p.market.status === "PAYOUT_PENDING"
+        ? { text: "Payout pending", className: "text-orange" }
+        : { text: "Awaiting resolution", className: "text-orange" };
   }
 }
 

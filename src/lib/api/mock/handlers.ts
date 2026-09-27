@@ -26,7 +26,7 @@ import type {
   Role,
   UserSummary,
 } from "@/types";
-import { MAX_DEPOSIT } from "@/types";
+import { MAX_DEPOSIT, PAYOUT_GRACE_MINUTES } from "@/types";
 import { ApiError } from "../errors";
 import {
   ME,
@@ -71,9 +71,17 @@ function getCommunity(id: ID): CommunityRow {
   return c;
 }
 
-/** Markets past their deadline lock automatically, like the backend's scheduler. */
+/**
+ * Time-based transitions, like the backend's scheduler: markets past their deadline lock, and
+ * markets whose grace period is over pay out.
+ */
 function syncStatus(m: MarketRow) {
   if (m.status === "OPEN" && Date.parse(m.deadline) <= Date.now()) m.status = "LOCKED";
+  if (m.status === "PAYOUT_PENDING" && m.settlement && Date.parse(m.settlement.payoutAt) <= Date.now()) {
+    settle(m, m.settlement.winningOptionId);
+    m.status = "RESOLVED";
+    m.settlement.paidOutAt = nowIso();
+  }
   return m;
 }
 
@@ -145,13 +153,15 @@ function marketSummary(m: MarketRow): MarketSummary {
       totalAmount: o.totalAmount,
       positionCount: o.positionCount,
       probability: probs[o.id],
-      isWinner: m.settlement ? m.settlement.winningOptionId === o.id : null,
+      // Only final once paid out; during the grace period the pick can still be nullified.
+      isWinner: m.status === "RESOLVED" && m.settlement ? m.settlement.winningOptionId === o.id : null,
     })),
     creator: user(m.creatorId),
     moderator: user(m.moderatorId),
     myStake: mine.length
       ? { optionId: mine[0].optionId, amount: myAmount, potentialPayout: payoutFor(m, mine[0].optionId, myAmount) }
       : null,
+    payoutAt: m.settlement?.payoutAt ?? null,
   };
 }
 
@@ -165,6 +175,8 @@ function marketDetail(m: MarketRow): MarketDetail {
       winningOptionId: m.settlement.winningOptionId,
       resolvedBy: user(m.settlement.resolvedById),
       resolvedAt: m.settlement.resolvedAt,
+      payoutAt: m.settlement.payoutAt,
+      paidOutAt: m.settlement.paidOutAt,
       notes: m.settlement.notes,
     },
     history: m.history,
@@ -173,7 +185,7 @@ function marketDetail(m: MarketRow): MarketDetail {
     permissions: {
       canBet: m.status === "OPEN",
       canResolve: isModerator && m.status === "LOCKED",
-      canCancel: isModerator && m.status === "LOCKED",
+      canCancel: isModerator && (m.status === "LOCKED" || m.status === "PAYOUT_PENDING"),
     },
   };
 }
@@ -235,9 +247,9 @@ function settle(m: MarketRow, winningOptionId: ID | null) {
   wallet.updatedAt = nowIso();
 }
 
-function requireModerator(m: MarketRow) {
+function requireModerator(m: MarketRow, allowed: MarketRow["status"][]) {
   if (m.moderatorId !== ME) throw new ApiError(403, "FORBIDDEN", "Only this market's moderator can do that");
-  if (m.status !== "LOCKED") throw new ApiError(409, "MARKET_CLOSED", "This market can't be settled right now");
+  if (!allowed.includes(m.status)) throw new ApiError(409, "MARKET_CLOSED", "This market can't be settled right now");
 }
 
 // ---- routes ----
@@ -273,6 +285,7 @@ const routes: [string, RegExp, Handler][] = [
     const moderated = markets.filter((m) => m.moderatorId === ME).map(syncStatus);
     return {
       pending: moderated.filter((m) => m.status === "LOCKED").map(marketSummary),
+      payoutPending: moderated.filter((m) => m.status === "PAYOUT_PENDING").map(marketSummary),
       active: moderated.filter((m) => m.status === "OPEN").map(marketSummary),
     };
   }],
@@ -474,22 +487,32 @@ const routes: [string, RegExp, Handler][] = [
   }],
 
   ["POST", /^\/markets\/(\d+)\/resolve$/, ([id], _, body) => {
+    // Picks the winner and starts the grace period; no points move until payoutAt (syncStatus).
     const m = getMarket(Number(id));
-    requireModerator(m);
+    if (m.moderatorId === ME && m.status === "PAYOUT_PENDING") {
+      // The pick is final: during the grace period the only change allowed is a nullify.
+      throw new ApiError(409, "MARKET_CLOSED", "A winner has already been picked. You can only nullify this market");
+    }
+    requireModerator(m, ["LOCKED"]);
     const { winningOptionId, notes } = body as ResolveMarketRequest;
     if (!m.options.some((o) => o.id === winningOptionId)) throw new ApiError(400, "VALIDATION_ERROR", "Unknown outcome");
-    settle(m, winningOptionId);
-    m.status = "RESOLVED";
-    m.settlement = { winningOptionId, resolvedById: ME, resolvedAt: nowIso(), notes: notes ?? null };
+    const now = Date.now();
+    m.status = "PAYOUT_PENDING";
+    m.settlement = {
+      winningOptionId, resolvedById: ME, resolvedAt: new Date(now).toISOString(),
+      payoutAt: new Date(now + PAYOUT_GRACE_MINUTES * 60_000).toISOString(), paidOutAt: null, notes: notes ?? null,
+    };
     return marketDetail(m);
   }],
 
   ["POST", /^\/markets\/(\d+)\/cancel$/, ([id], _, body) => {
+    // Final: allowed before or during the grace period, never after the payout.
     const m = getMarket(Number(id));
-    requireModerator(m);
+    requireModerator(m, ["LOCKED", "PAYOUT_PENDING"]);
     void (body as CancelMarketRequest);
     settle(m, null);
     m.status = "CANCELLED";
+    m.settlement = null;
     return marketDetail(m);
   }],
 ];
@@ -507,6 +530,9 @@ const LATENCY_MS = process.env.NODE_ENV === "test" ? 0 : 200;
 
 export async function mockRequest<T>(method: string, path: string, query: Query, body: unknown): Promise<T> {
   await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
+  // Stand-in for the backend's scheduler: apply due locks and payouts before every request,
+  // so e.g. GET /me sees a payout even if nobody reopened the market.
+  markets.forEach(syncStatus);
   for (const [routeMethod, pattern, handler] of routes) {
     const match = routeMethod === method ? pattern.exec(path) : null;
     if (match) {

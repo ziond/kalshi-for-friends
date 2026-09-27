@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { CheckCheckIcon, ChevronRightIcon, ClockIcon, CoinIcon } from "@/components/icons";
 import { CommunityChip, ErrorNote, Segmented, Skeleton } from "@/components/ui";
 import { useModQueue } from "@/hooks/use-me";
+import { useNow } from "@/hooks/use-now";
 import { useCancelMarket, useResolveMarket } from "@/hooks/use-markets";
-import { formatPoints, formatTimeLeft, outcomeColor } from "@/lib/format";
+import { formatCountdown, formatPoints, formatTimeLeft, outcomeColor } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 import type { MarketSummary } from "@/types";
 
 type Tab = "pending" | "active";
@@ -50,6 +53,41 @@ function PendingCard({ market }: { market: MarketSummary }) {
   );
 }
 
+/** Winner picked; payouts go out when the countdown ends unless the moderator nullifies first. */
+function PayoutPendingCard({ market }: { market: MarketSummary }) {
+  const qc = useQueryClient();
+  const cancel = useCancelMarket(market.id);
+  const now = useNow();
+  const due = market.payoutAt ? Date.parse(market.payoutAt) <= now : false;
+
+  useEffect(() => {
+    if (due) qc.invalidateQueries({ queryKey: queryKeys.me.modQueue() });
+  }, [due, qc]);
+
+  return (
+    <article className="flex flex-col gap-3 rounded-[20px] border border-orange/40 bg-surface p-5">
+      <div className="flex items-center justify-between gap-3">
+        <CommunityChip name={market.communityName} visibility={market.communityVisibility} />
+        <span className="flex-none text-xs font-semibold text-orange tabular-nums">
+          {due || !market.payoutAt ? "Paying out now…" : `Payout in ${formatCountdown(market.payoutAt, now)}`}
+        </span>
+      </div>
+      <Link href={`/markets/${market.id}`} className="text-lg leading-snug font-bold tracking-tight hover:text-lime">
+        {market.title}
+      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm text-muted">Winner picked (final). You can only nullify until the payout.</span>
+        <button disabled={cancel.isPending || due}
+          onClick={() => confirm("Nullify this market and refund every bet? This can't be undone.") && cancel.mutate({})}
+          className="cursor-pointer rounded-full border border-no/60 px-4 py-2.5 text-sm font-semibold text-no hover:bg-no/10 disabled:opacity-45">
+          Nullify
+        </button>
+      </div>
+      <ErrorNote error={cancel.error} />
+    </article>
+  );
+}
+
 function ActiveRow({ market }: { market: MarketSummary }) {
   return (
     <Link href={`/markets/${market.id}`}
@@ -86,6 +124,7 @@ export default function ModQueuePage() {
   const { data, isLoading } = useModQueue();
   const [tab, setTab] = useState<Tab>("pending");
   const pending = data?.pending ?? [];
+  const payoutPending = data?.payoutPending ?? [];
   const active = data?.active ?? [];
 
   return (
@@ -109,7 +148,13 @@ export default function ModQueuePage() {
       ) : tab === "pending" ? (
         <section aria-label="Needs resolution" className="flex flex-col gap-3">
           {pending.map((m) => <PendingCard key={m.id} market={m} />)}
-          {data && pending.length === 0 && (
+          {payoutPending.length > 0 && (
+            <>
+              <h2 className="mt-3 text-sm font-semibold text-muted">Paying out soon · {payoutPending.length}</h2>
+              {payoutPending.map((m) => <PayoutPendingCard key={m.id} market={m} />)}
+            </>
+          )}
+          {data && pending.length === 0 && payoutPending.length === 0 && (
             <CaughtUp title="All caught up."
               body="No predictions need your decision right now. Enjoy the peace while it lasts." />
           )}

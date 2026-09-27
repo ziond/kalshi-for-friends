@@ -1,43 +1,99 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowUpRightIcon, CheckIcon, ClockIcon, CoinIcon, UsersIcon } from "@/components/icons";
 import { ProbabilityChart } from "@/components/probability-chart";
 import { WinningCard } from "@/components/winning-card";
 import { Avatar, BackLink, Button, Card, CommunityChip, ErrorNote, ProbabilityBar, Skeleton, StatusPill, cn } from "@/components/ui";
 import { isLive, useCancelMarket, useMarket, useMarketActivity, usePlacePosition, useResolveMarket, useSettlementSync } from "@/hooks/use-markets";
 import { useMe } from "@/hooks/use-me";
-import { formatPercent, formatPoints, formatRelative, formatTimeLeft, outcomeColor } from "@/lib/format";
-import type { ID, MarketDetail } from "@/types";
+import { useNow } from "@/hooks/use-now";
+import { formatCountdown, formatPercent, formatPoints, formatRelative, formatTimeLeft, outcomeColor } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
+import { PAYOUT_GRACE_MINUTES, type ID, type MarketDetail } from "@/types";
 
 const QUICK_ADDS = [25, 50, 100];
+
+/** "m:ss" until the payout; asks for fresh data once it's due so the payout shows up straight away. */
+function usePayoutCountdown(market: MarketDetail) {
+  const qc = useQueryClient();
+  const payoutAt = market.status === "PAYOUT_PENDING" ? market.settlement?.payoutAt : undefined;
+  const now = useNow(Boolean(payoutAt));
+  const due = payoutAt ? Date.parse(payoutAt) <= now : false;
+
+  useEffect(() => {
+    if (due) qc.invalidateQueries({ queryKey: queryKeys.markets.detail(market.id) });
+  }, [due, market.id, qc]);
+
+  return { countdown: payoutAt ? formatCountdown(payoutAt, now) : "", due };
+}
+
+function winnerText(market: MarketDetail) {
+  return market.options.find((o) => o.id === market.settlement?.winningOptionId)?.text;
+}
 
 function ModeratorPanel({ market }: { market: MarketDetail }) {
   const resolve = useResolveMarket(market.id);
   const cancel = useCancelMarket(market.id);
+  const { countdown, due } = usePayoutCountdown(market);
   const busy = resolve.isPending || cancel.isPending;
+  const nullify = () =>
+    confirm("Nullify this market and refund every bet? This can't be undone.") && cancel.mutate({});
+
+  if (market.status === "PAYOUT_PENDING") {
+    return (
+      <div className="flex flex-col gap-3 rounded-[20px] border-2 border-orange/70 bg-orange/[0.07] p-5">
+        <div className="text-base font-bold text-orange">
+          You picked {winnerText(market)} — {due ? "paying out now…" : `payouts go out in ${countdown}`}
+        </div>
+        <p className="text-sm text-muted">
+          The pick can&apos;t be changed. If it&apos;s wrong, nullify the market before the payout and everyone gets
+          their points back. After the payout the result is final.
+        </p>
+        <div>
+          <Button variant="danger" disabled={busy || due} onClick={nullify}>Nullify market</Button>
+        </div>
+        <ErrorNote error={cancel.error} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3 rounded-[20px] border-2 border-lime/80 bg-lime/[0.06] p-5">
       <div className="text-base font-bold text-lime">This market has ended — you&apos;re the moderator</div>
       <p className="text-sm text-muted">
-        Validate the correct outcome, or nullify the market if it can&apos;t be resolved fairly. Bets settle
-        immediately once you act.
+        Validate the correct outcome, or nullify the market if it can&apos;t be resolved fairly. Your pick is final:
+        it can&apos;t be switched to another outcome. Payouts go out {PAYOUT_GRACE_MINUTES} minutes after you validate,
+        and until then the only change you can make is to nullify. Nullifying refunds every bet straight away and
+        can&apos;t be undone.
       </p>
       <div className="flex flex-wrap gap-2.5">
         {market.options.map((o) => (
           <Button key={o.id} disabled={busy}
-            onClick={() => confirm(`Resolve as "${o.text}"? This pays out immediately.`) && resolve.mutate({ winningOptionId: o.id })}>
+            onClick={() =>
+              confirm(`Pick "${o.text}" as the winner? You can't switch to another outcome afterwards. Payouts go out in ${PAYOUT_GRACE_MINUTES} minutes; until then you can only nullify the market.`) &&
+              resolve.mutate({ winningOptionId: o.id })}>
             Validate: {o.text}
           </Button>
         ))}
-        <Button variant="danger" disabled={busy}
-          onClick={() => confirm("Nullify this market and refund every bet?") && cancel.mutate({})}>
-          Nullify market
-        </Button>
+        <Button variant="danger" disabled={busy} onClick={nullify}>Nullify market</Button>
       </div>
       <ErrorNote error={resolve.error ?? cancel.error} />
+    </div>
+  );
+}
+
+/** What everyone else sees during the grace period. */
+function PayoutPendingBanner({ market }: { market: MarketDetail }) {
+  const { countdown, due } = usePayoutCountdown(market);
+  return (
+    <div className="rounded-2xl border border-orange/40 bg-orange/10 px-5 py-4 text-sm">
+      <span className="font-semibold text-orange">{winnerText(market)} picked as the winner. </span>
+      <span className="text-muted">
+        {due ? "Paying out now…" : `Payouts go out in ${countdown} — the moderator can still nullify until then.`}
+      </span>
     </div>
   );
 }
@@ -88,6 +144,7 @@ function OutcomePicker({ market, selected, onSelect }: { market: MarketDetail; s
       {rows.map(({ option, color }) => {
         const isSelected = selected === option.id;
         const isMine = market.myStake?.optionId === option.id;
+        const isPicked = market.status === "PAYOUT_PENDING" && market.settlement?.winningOptionId === option.id;
         return (
           <button
             key={option.id}
@@ -110,6 +167,11 @@ function OutcomePicker({ market, selected, onSelect }: { market: MarketDetail; s
               <span className="text-2xl font-bold tabular-nums" style={{ color }}>{formatPercent(option.probability)}</span>
             </span>
             <ProbabilityBar value={option.probability} color={color} />
+            {isPicked && (
+              <span className="text-xs font-bold tracking-[0.06em] text-orange uppercase">
+                Picked as winner · payout pending{isMine ? " · your pick" : ""}
+              </span>
+            )}
             {isSelected && !disabled ? (
               <span className="flex items-center gap-1.5 text-xs font-bold tracking-[0.06em] text-lime uppercase">
                 <CheckIcon size={14} strokeWidth={3} /> Your selected outcome
@@ -312,6 +374,7 @@ function MarketView({ market }: { market: MarketDetail }) {
               <CommunityChip name={market.communityName} visibility={market.communityVisibility} />
               {market.status === "OPEN" ? <StatusPill tone="live">Live</StatusPill>
                 : market.status === "LOCKED" ? <StatusPill tone="muted">Closed</StatusPill>
+                : market.status === "PAYOUT_PENDING" ? <StatusPill tone="orange">Paying out</StatusPill>
                 : market.status === "CANCELLED" ? <StatusPill tone="no">Nullified</StatusPill>
                 : <StatusPill tone="muted">Resolved</StatusPill>}
             </div>
@@ -324,7 +387,9 @@ function MarketView({ market }: { market: MarketDetail }) {
             </div>
           </header>
 
-          {market.permissions.canResolve && <ModeratorPanel market={market} />}
+          {(market.permissions.canResolve || market.permissions.canCancel)
+            ? <ModeratorPanel market={market} />
+            : market.status === "PAYOUT_PENDING" && <PayoutPendingBanner market={market} />}
           {settled && <ResolvedBanner market={market} />}
           <MyResult market={market} />
           <OutcomePicker market={market} selected={selected} onSelect={setSelected} />
