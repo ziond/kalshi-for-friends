@@ -16,6 +16,7 @@ Each file is an explicit transaction, so a failed file rolls back its DDL.
 | 000008 | calculate_prediction_score, score backfill |
 | 000009 | PAYOUT_PENDING status, settlements.payout_at / paid_out_at |
 | 000010 | wallets.next_daily_bonus_at, DAILY_BONUS transaction type |
+| 000011 | communities.invite_expires_at (15-minute invite links) |
 
 Use the golang-migrate CLI with PostgreSQL support. It maintains schema version,
 migration locking, and dirty state. Do not run individual files manually against
