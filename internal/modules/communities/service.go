@@ -65,7 +65,7 @@ func (s *Service) Get(ctx context.Context, communityID, userID int64) (*Communit
 		return nil, apperror.Forbidden("This community is invite-only")
 	}
 	if d.MyRole == nil || !d.MyRole.CanSeeInviteCode() {
-		d.InviteCode = nil
+		d.InviteCode, d.InviteExpiresAt = nil, nil
 	}
 	return d, nil
 }
@@ -106,7 +106,8 @@ func (s *Service) Create(ctx context.Context, userID int64, req CreateCommunityR
 			if req.Visibility == "PUBLIC" {
 				for _, username := range req.ModeratorUsernames {
 					var moderatorID int64
-					if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE lower(username)=lower($1)`, strings.TrimSpace(username)).Scan(&moderatorID); err != nil {
+					username = strings.TrimSpace(username)
+					if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE lower(username)=lower($1)`, username).Scan(&moderatorID); err != nil {
 						if database.IsNoRows(err) {
 							return apperror.Validation("Unknown moderator", map[string]string{"moderatorUsernames": "Unknown username: " + username})
 						}
@@ -199,20 +200,21 @@ func (s *Service) Update(ctx context.Context, communityID, userID int64, req Upd
 
 // RegenerateInviteCode replaces the code, invalidating the old one.
 func (s *Service) RegenerateInviteCode(ctx context.Context, communityID, userID int64) (*InviteCodeResponse, error) {
-	var newCode string
+	var res InviteCodeResponse
 	err := retryOnInviteCollision(func(code string) error {
 		return database.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
 			if err := s.requireAdmin(ctx, tx, communityID, userID); err != nil {
 				return err
 			}
-			newCode = code
-			return updateInviteCode(ctx, tx, communityID, code)
+			expiresAt, err := updateInviteCode(ctx, tx, communityID, code)
+			res = InviteCodeResponse{InviteCode: code, InviteExpiresAt: expiresAt}
+			return err
 		})
 	})
 	if err != nil {
 		return nil, wrap("regenerate invite code", err)
 	}
-	return &InviteCodeResponse{InviteCode: newCode}, nil
+	return &res, nil
 }
 
 func (s *Service) ListMembers(ctx context.Context, communityID, userID int64) ([]CommunityMember, error) {

@@ -50,6 +50,18 @@ func GetProfile(ctx context.Context, db database.DBTX, userID int64) (*UserProfi
 	return &p, nil
 }
 
+// FindByUsername matches case-insensitively (usernames are unique by
+// lower(username)). Returns pgx.ErrNoRows when nobody has that name.
+func FindByUsername(ctx context.Context, db database.DBTX, username string) (*UserSummary, error) {
+	var u UserSummary
+	err := db.QueryRow(ctx, `SELECT id, username, avatar_url FROM users WHERE lower(username) = lower($1)`, username).
+		Scan(&u.ID, &u.Username, &u.AvatarURL)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 // UpdateProfile changes only the fields whose set flag is true. A nil
 // avatarURL with setAvatar=true clears the avatar.
 func UpdateProfile(ctx context.Context, db database.DBTX, userID int64,

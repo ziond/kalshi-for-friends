@@ -39,6 +39,17 @@ func (h *Handler) UpdateMe(c *fiber.Ctx) error {
 	return c.JSON(me)
 }
 
+// LookupUsername handles GET /users/lookup?username=. Always 200:
+// { user: UserSummary | null }. The create-community form checks moderator
+// names with it as they're typed.
+func (h *Handler) LookupUsername(c *fiber.Ctx) error {
+	u, err := h.svc.LookupUsername(c.UserContext(), c.Query("username"))
+	if err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{"user": u})
+}
+
 // GetProfile handles GET /users/:id.
 func (h *Handler) GetProfile(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -72,6 +73,17 @@ func UniqueViolation(err error) (string, bool) {
 		return pgErr.ConstraintName, true
 	}
 	return "", false
+}
+
+// ContainsPattern turns a user's search text into an ILIKE pattern matching
+// it anywhere, trimmed, with % and _ matched literally. Use it with
+// `ILIKE $n ESCAPE '\'`. Returns "" for blank input (no filter).
+func ContainsPattern(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return ""
+	}
+	return "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q) + "%"
 }
 
 func IsNoRows(err error) bool {

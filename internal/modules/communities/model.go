@@ -39,6 +39,8 @@ type CommunityDetail struct {
 	CommunitySummary
 	Creator    users.UserSummary `json:"creator"`
 	InviteCode *string           `json:"inviteCode"`
+	// InviteExpiresAt is when InviteCode stops working; null exactly when InviteCode is.
+	InviteExpiresAt *time.Time `json:"inviteExpiresAt"`
 }
 
 type CommunityMember struct {
@@ -68,5 +70,6 @@ type UpdateMemberRoleRequest struct {
 }
 
 type InviteCodeResponse struct {
-	InviteCode string `json:"inviteCode"`
+	InviteCode      string    `json:"inviteCode"`
+	InviteExpiresAt time.Time `json:"inviteExpiresAt"`
 }

@@ -321,8 +321,8 @@ func (a *API) List(c *fiber.Ctx) error {
  WHERE (c.visibility='PUBLIC' OR EXISTS(SELECT 1 FROM community_members WHERE community_id=c.id AND user_id=$1))
  AND ($2::bigint=0 OR c.id=$2) AND ($3='' OR c.visibility=$3)
  AND ($4='' OR CASE WHEN m.status='OPEN' AND m.deadline<=now() THEN 'LOCKED' ELSE m.status END=$4)
- AND ($5='' OR m.title ILIKE '%'||$5||'%' OR c.name ILIKE '%'||$5||'%')
- ORDER BY CASE WHEN $6='volume' THEN COALESCE((SELECT sum(total_amount) FROM market_options WHERE market_id=m.id),0) END DESC,m.created_at DESC,m.id DESC LIMIT $7 OFFSET $8`, middleware.UserID(c), community, visibility, status, c.Query("q"), sort, limit+1, offset)
+ AND ($5='' OR m.title ILIKE $5 ESCAPE '\' OR c.name ILIKE $5 ESCAPE '\')
+ ORDER BY CASE WHEN $6='volume' THEN COALESCE((SELECT sum(total_amount) FROM market_options WHERE market_id=m.id),0) END DESC,m.created_at DESC,m.id DESC LIMIT $7 OFFSET $8`, middleware.UserID(c), community, visibility, status, database.ContainsPattern(c.Query("q")), sort, limit+1, offset)
 	if err != nil {
 		return err
 	}

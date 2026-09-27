@@ -3,6 +3,7 @@ package communities
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -63,18 +64,20 @@ func listForUser(ctx context.Context, db database.DBTX, userID int64) ([]Communi
 func getDetail(ctx context.Context, db database.DBTX, communityID, userID int64) (*CommunityDetail, error) {
 	var d CommunityDetail
 	var inviteCode string
+	var inviteExpiresAt time.Time
 	row := db.QueryRow(ctx, `
-		SELECT `+summaryColumns+`, u.id, u.username, u.avatar_url, c.invite_code
+		SELECT `+summaryColumns+`, u.id, u.username, u.avatar_url, c.invite_code, c.invite_expires_at
 		FROM communities c
 		LEFT JOIN community_members cm ON cm.community_id = c.id AND cm.user_id = $2
 		JOIN users u ON u.id = c.creator_id
 		WHERE c.id = $1`, communityID, userID)
 	err := scanSummary(row, &d.CommunitySummary,
-		&d.Creator.ID, &d.Creator.Username, &d.Creator.AvatarURL, &inviteCode)
+		&d.Creator.ID, &d.Creator.Username, &d.Creator.AvatarURL, &inviteCode, &inviteExpiresAt)
 	if err != nil {
 		return nil, err
 	}
-	d.InviteCode = &inviteCode
+	inviteExpiresAt = inviteExpiresAt.UTC()
+	d.InviteCode, d.InviteExpiresAt = &inviteCode, &inviteExpiresAt
 	return &d, nil
 }
 
@@ -133,12 +136,16 @@ func updateCommunity(ctx context.Context, db database.DBTX, communityID int64,
 	return err
 }
 
-func updateInviteCode(ctx context.Context, db database.DBTX, communityID int64, inviteCode string) error {
-	_, err := db.Exec(ctx, `
+// updateInviteCode replaces the code and starts a new 15-minute window,
+// returning when the new code expires.
+func updateInviteCode(ctx context.Context, db database.DBTX, communityID int64, inviteCode string) (time.Time, error) {
+	var expiresAt time.Time
+	err := db.QueryRow(ctx, `
 		UPDATE communities
 		SET invite_code = $2, invite_expires_at = clock_timestamp() + INTERVAL '15 minutes', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1`, communityID, inviteCode)
-	return err
+		WHERE id = $1
+		RETURNING invite_expires_at`, communityID, inviteCode).Scan(&expiresAt)
+	return expiresAt.UTC(), err
 }
 
 const memberColumns = `u.id, u.username, u.avatar_url, cm.role, cm.joined_at`

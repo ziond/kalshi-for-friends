@@ -43,6 +43,23 @@ func (s *Service) GetMe(ctx context.Context, userID int64) (*Me, error) {
 	return me, nil
 }
 
+// LookupUsername returns the user with that username (trimmed,
+// case-insensitive), or nil if there isn't one.
+func (s *Service) LookupUsername(ctx context.Context, username string) (*UserSummary, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, nil
+	}
+	u, err := FindByUsername(ctx, s.pool, username)
+	if database.IsNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("users: lookup username: %w", err)
+	}
+	return u, nil
+}
+
 func (s *Service) GetProfile(ctx context.Context, userID int64) (*UserProfile, error) {
 	p, err := GetProfile(ctx, s.pool, userID)
 	if database.IsNoRows(err) {

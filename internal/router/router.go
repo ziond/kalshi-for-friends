@@ -81,6 +81,8 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *fiber.App {
 	api.Get("/me/wallet", requireAuth, paid, walletAPI.Get)
 	api.Post("/me/daily-bonus", requireAuth, walletAPI.DailyBonus)
 	api.Patch("/me", requireAuth, usersHandler.UpdateMe)
+	// Before /users/:id, or "lookup" would be read as an id.
+	api.Get("/users/lookup", requireAuth, usersHandler.LookupUsername)
 	api.Get("/users/:id", requireAuth, paid, usersHandler.GetProfile)
 	api.Get("/invites/:code", requireAuth, communitiesHandler.InvitePreview)
 	// The one signed-out read: link previews and the signed-out invite page.

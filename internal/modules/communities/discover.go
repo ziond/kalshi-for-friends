@@ -9,9 +9,12 @@ import (
 )
 
 func (h *Handler) Discover(c *fiber.Ctx) error {
+	// Optional ?q= search (Home search): name or description contains q.
 	rows, err := h.svc.pool.Query(c.UserContext(), `SELECT `+summaryColumns+` FROM communities c
  LEFT JOIN community_members cm ON cm.community_id=c.id AND cm.user_id=$1
- WHERE c.visibility='PUBLIC' ORDER BY c.id DESC`, middleware.UserID(c))
+ WHERE c.visibility='PUBLIC'
+ AND ($2='' OR c.name ILIKE $2 ESCAPE '\' OR c.description ILIKE $2 ESCAPE '\')
+ ORDER BY c.id DESC`, middleware.UserID(c), database.ContainsPattern(c.Query("q")))
 	if err != nil {
 		return err
 	}
