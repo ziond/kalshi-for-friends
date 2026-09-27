@@ -12,6 +12,7 @@ import type {
   DepositRequest,
   ID,
   InvitePreview,
+  LeaderboardEntry,
   MarketActivity,
   MarketDetail,
   MarketSummary,
@@ -353,11 +354,25 @@ const routes: [string, RegExp, Handler][] = [
     return c.memberIds.map((userId) => ({ user: user(userId), role: roleOf(c, userId)!, joinedAt: c.createdAt }));
   }],
 
-  ["GET", /^\/communities\/(\d+)\/leaderboard$/, ([id]) => {
+  // Stats from settled (won/lost) positions in this community; each market counts once per user,
+  // refunds don't count. Ranked by net profit, like the real API.
+  ["GET", /^\/communities\/(\d+)\/leaderboard$/, ([id]): LeaderboardEntry[] => {
     const c = getCommunity(Number(id));
-    return c.memberIds.map((userId, i) => ({
-      rank: i + 1, user: user(userId), netProfit: 0, correctPredictions: 0, totalPredictions: 0, accuracy: 0,
-    }));
+    const marketIds = new Set(markets.filter((m) => m.communityId === c.id).map((m) => m.id));
+    const entries = c.memberIds.map((userId) => {
+      const settled = positions.filter((p) =>
+        p.userId === userId && marketIds.has(p.marketId) && (p.result === "WON" || p.result === "LOST"));
+      const total = new Set(settled.map((p) => p.marketId)).size;
+      const correct = new Set(settled.filter((p) => p.result === "WON").map((p) => p.marketId)).size;
+      const netProfit = settled.reduce((sum, p) => sum + (p.payout ?? 0) - p.amount, 0);
+      return {
+        rank: 0, user: user(userId), netProfit,
+        correctPredictions: correct, totalPredictions: total, accuracy: total ? correct / total : 0,
+      };
+    });
+    entries.sort((a, b) => b.netProfit - a.netProfit);
+    entries.forEach((e, i) => (e.rank = i + 1));
+    return entries;
   }],
 
   ["GET", /^\/markets$/, (_, q) => {

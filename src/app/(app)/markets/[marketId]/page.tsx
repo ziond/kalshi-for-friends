@@ -6,7 +6,7 @@ import { ArrowUpRightIcon, CheckIcon, ClockIcon, CoinIcon, UsersIcon } from "@/c
 import { ProbabilityChart } from "@/components/probability-chart";
 import { WinningCard } from "@/components/winning-card";
 import { Avatar, BackLink, Button, Card, CommunityChip, ErrorNote, ProbabilityBar, Skeleton, StatusPill, cn } from "@/components/ui";
-import { useCancelMarket, useMarket, useMarketActivity, usePlacePosition, useResolveMarket } from "@/hooks/use-markets";
+import { isLive, useCancelMarket, useMarket, useMarketActivity, usePlacePosition, useResolveMarket, useSettlementSync } from "@/hooks/use-markets";
 import { useMe } from "@/hooks/use-me";
 import { formatPercent, formatPoints, formatRelative, formatTimeLeft, outcomeColor } from "@/lib/format";
 import type { ID, MarketDetail } from "@/types";
@@ -242,8 +242,8 @@ function StakePanel({ market, selected }: { market: MarketDetail; selected: ID |
   );
 }
 
-function RecentActivity({ marketId }: { marketId: ID }) {
-  const { data } = useMarketActivity(marketId);
+function RecentActivity({ marketId, live }: { marketId: ID; live: boolean }) {
+  const { data } = useMarketActivity(marketId, { live });
   if (!data?.items.length) return null;
   return (
     <Card className="flex flex-col gap-3 p-5">
@@ -299,6 +299,7 @@ function MarketView({ market }: { market: MarketDetail }) {
   // Default to the side the user already backed; they can only add to it.
   const [selected, setSelected] = useState<ID | null>(market.myStake?.optionId ?? null);
   const settled = market.status === "RESOLVED" || market.status === "CANCELLED";
+  useSettlementSync(market);
 
   return (
     <div className="mx-auto flex max-w-[1180px] flex-col gap-5 px-4 pt-6 pb-16 sm:px-6">
@@ -336,7 +337,7 @@ function MarketView({ market }: { market: MarketDetail }) {
 
         <div className="flex min-w-0 flex-col gap-5">
           <ProbabilityChart options={market.options} history={market.history} marketType={market.marketType} />
-          <RecentActivity marketId={market.id} />
+          <RecentActivity marketId={market.id} live={isLive(market.status)} />
         </div>
       </div>
     </div>

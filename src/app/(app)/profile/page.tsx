@@ -7,9 +7,9 @@ import { ChevronRightIcon } from "@/components/icons";
 import { EmptyState, SectionHeader, cn } from "@/components/ui";
 import { useCommunities } from "@/hooks/use-communities";
 import { useLogout, useMe, useMyPositions } from "@/hooks/use-me";
+import { loadPage } from "@/lib/auth/navigate";
 import { ROLE_LABEL, formatMonthYear, initial } from "@/lib/format";
 import type { Position } from "@/types";
-import { useRouter } from "next/navigation";
 
 function resultLabel(p: Position): { text: string; className: string } {
   switch (p.result) {
@@ -53,7 +53,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function ProfilePage() {
-  const router = useRouter();
   const { data: me } = useMe();
   const { data: communities } = useCommunities();
   const { data: open } = useMyPositions({ status: "open" });
@@ -72,7 +71,7 @@ export default function ProfilePage() {
             {me && <div className="text-sm text-muted">Member since {formatMonthYear(me.createdAt)}</div>}
           </div>
         </div>
-        <button onClick={() => logout.mutate(undefined, { onSuccess: () => router.push("/login") })}
+        <button onClick={() => logout.mutate(undefined, { onSuccess: () => loadPage("/login") })}
           className="cursor-pointer rounded-full border border-line px-4 py-2 text-sm font-semibold text-muted hover:text-ink">
           Log out
         </button>

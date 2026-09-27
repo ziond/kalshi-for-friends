@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { TrophyIcon } from "@/components/icons";
 import { MarketCard, MarketGrid } from "@/components/market-card";
 import { Avatar, BackLink, Button, Card, EmptyState, ErrorNote, SectionHeader, Skeleton, VisibilityBadge, inputClass } from "@/components/ui";
 import { useCommunity, useJoinCommunity } from "@/hooks/use-communities";
@@ -82,6 +83,13 @@ export default function CommunityPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2.5">
+            {isMember && (
+              <Link href={`/communities/${community.id}/leaderboard`}
+                className="flex items-center gap-1.5 rounded-full bg-raised px-4 py-2 text-[13px] font-semibold hover:bg-line">
+                <TrophyIcon size={15} className="text-lime" />
+                Leaderboard
+              </Link>
+            )}
             {canInvite && <Button variant="secondary" onClick={() => setInviteOpen(true)}>Invite people</Button>}
             {!isMember && community.visibility === "PUBLIC" && (
               <Button onClick={() => join.mutate(community.id)} disabled={join.isPending}>

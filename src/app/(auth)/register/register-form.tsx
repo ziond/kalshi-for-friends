@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, ErrorNote, Field, inputClass } from "@/components/ui";
+import { replacePage } from "@/lib/auth/navigate";
 import { useRegister } from "@/hooks/use-me";
 
 export function RegisterForm({ nextPath }: { nextPath: string }) {
-  const router = useRouter();
   const register = useRegister();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -18,7 +17,7 @@ export function RegisterForm({ nextPath }: { nextPath: string }) {
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        register.mutate({ username, email, password }, { onSuccess: () => router.push(nextPath) });
+        register.mutate({ username, email, password }, { onSuccess: () => replacePage(nextPath) });
       }}
     >
       <h1 className="text-2xl font-bold tracking-tight">Join called it.</h1>

@@ -2,7 +2,10 @@
 
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/auth/navigate", () => ({ loadPage: vi.fn(), replacePage: vi.fn() }));
 import { markets } from "@/lib/api/mock/db";
+import { loadPage } from "@/lib/auth/navigate";
 import { navigation } from "@/test/navigation";
 import { renderWithClient } from "@/test/render";
 import { CreateMarketForm } from "./markets/new/create-market-form";
@@ -104,6 +107,6 @@ describe("Profile", () => {
 
     await user.click(screen.getByRole("button", { name: "Log out" }));
 
-    await waitFor(() => expect(navigation.router.push).toHaveBeenCalledWith("/login"));
+    await waitFor(() => expect(loadPage).toHaveBeenCalledWith("/login"));
   });
 });

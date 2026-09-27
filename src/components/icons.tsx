@@ -48,7 +48,13 @@ export const FlameIcon = (p: IconProps) => (
 export const ShieldIcon = (p: IconProps) => (
   <Icon {...p}><path d="M12 3 5 6v5.5c0 4.2 2.9 7.9 7 9.5 4.1-1.6 7-5.3 7-9.5V6Z" /><path d="m9 12 2 2 4-4" /></Icon>
 );
-export const SearchIcon = (p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Icon>;
+export const TrophyIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 4h8v5a4 4 0 0 1-8 0Z" /><path d="M16 5h3v1.5A3.5 3.5 0 0 1 15.6 10M8 5H5v1.5A3.5 3.5 0 0 0 8.4 10" />
+    <path d="M12 13v4M8.5 20.5h7M10 17h4l.5 3.5h-5Z" />
+  </Icon>
+);
+export const SearchIcon =(p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Icon>;
 export const PlusIcon = (p: IconProps) => <Icon {...p}><path d="M12 5v14M5 12h14" /></Icon>;
 
 // Bottom navigation

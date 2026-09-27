@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, ErrorNote, Field, inputClass } from "@/components/ui";
+import { replacePage } from "@/lib/auth/navigate";
 import { useLogin } from "@/hooks/use-me";
 
 export function LoginForm({ nextPath }: { nextPath: string }) {
-  const router = useRouter();
   const login = useLogin();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +16,7 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        login.mutate({ email, password }, { onSuccess: () => router.push(nextPath) });
+        login.mutate({ email, password }, { onSuccess: () => replacePage(nextPath) });
       }}
     >
       <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
