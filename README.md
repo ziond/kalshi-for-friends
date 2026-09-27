@@ -52,6 +52,7 @@ go run ./cmd/server
 | `FRONTEND_URL` | unset | Exact browser-facing frontend origin, e.g. `http://localhost:3000`; added to CORS and mutation origin allowlists |
 | `INITIAL_BALANCE` | `1000` | Keep at 1000 to meet AUTH-05 |
 | `DEPOSITS_ENABLED` | `true` | Demo-only points; disable before any real-money use |
+| `PAYOUT_GRACE_MINUTES` | `5` | Wait between a moderator's pick and the payout (RES-16); the frontend shows 5 minutes, so keep them in sync |
 
 Errors use `{ "error": { "code", "message", "fields"? } }`.
 Last-admin removal returns `FORBIDDEN` without deleting membership.

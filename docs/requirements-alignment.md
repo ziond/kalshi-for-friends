@@ -16,6 +16,7 @@ has passed. No production/shared database was changed during implementation.
 | LCK; RES; DATA-01–05 | Computed deadline locking, moderator checks, locked-only settlement, sorted wallet locks, one settlement, exact payouts/refunds | Exact arithmetic unit tests pass; database race tests added |
 | MOD; LDR-01–02 | Mod queue, community net-profit leaderboard, one prediction per settled market; refunds excluded | Integration paths added |
 | SEC-07,09 | Per-process authentication throttle, JSON mutation bodies, explicit origin checks | Origin unit test; live proxy check pending |
+| RES-05,07,08,10,16–19; LCK-01; MOD-01; DATA-07; API-09 (no-store) | Payout grace period: a pick moves the market to PAYOUT_PENDING with `payoutAt` and moves no points; the pick is final (second pick → `MARKET_CLOSED` "A winner has already been picked. You can only nullify this market"); nullify allowed until the payout; payout job every 5 s plus payout-on-read; row-locked so a payout and a nullify never both happen; `payoutAt`/`paidOutAt`, `ModQueue.payoutPending`, `Cache-Control: no-store` on polled reads; migration 000009 | `grace_period_test`, updated `lifecycle_test`, `config_test` and `tests/schema.sql` pass against PostgreSQL 16.4 (2026-09-27); migration 000009 up/down/up verified, including rollback with a market mid-grace-period |
 
 ## Decisions / limitations
 
@@ -47,6 +48,17 @@ has passed. No production/shared database was changed during implementation.
   HTTP frontend proxy use local cookie settings. Set CORS_ORIGINS to the exact
   frontend origin if it forwards browser Origin headers. Keep SameSite=Lax and
   COOKIE_DOMAIN unset for the normal frontend proxy setup.
+- Payout grace period: `PAYOUT_GRACE_MINUTES` (default 5, 1–1440) sets it; the
+  frontend shows a fixed "5 minutes", so change both together. The job runs in
+  the API process every 5 seconds; overdue payouts are also applied before
+  reads that show balances, markets or stats, so a read at `payoutAt` sees the
+  result even if the job is late. A failed payout is logged and retried rather
+  than failing the read. A nullify that arrives after `payoutAt` gets
+  `MARKET_CLOSED` "Payouts have already gone out": the payout wins.
+- Settlement amounts (`total_pool`, `winning_pool`, mode) are recorded at the pick.
+  Betting closed at the deadline, so they can't change during the grace period.
+- `MyStake.potentialPayout` on a RESOLVED market is now the actual payout (it
+  was still the estimate, so losers saw the whole pool).
 - Full-stack scenarios, performance, and browser accessibility remain unverified.
 
 ## Safe verification before restart/push
@@ -64,6 +76,9 @@ the integration suite could not be executed here. Do not label it passed yet.
 After tests pass and Owen approves applying migrations, apply 000005–000007 to
 and 000008 to the shared database with the migration owner. The application role additionally
 needs `GRANT SELECT, INSERT, DELETE ON refresh_tokens TO kalshi_app;`.
+Apply 000009 (payout grace period) before restarting the API that expects it.
+The API now updates and deletes settlements, so the application role also needs
+`GRANT UPDATE, DELETE ON settlements TO kalshi_app;` if it doesn't have them yet.
 Do not restart the updated API before migrations and permissions are in place.
 Migration 000007 rollback intentionally fails if DEPOSIT ledger rows exist;
 it never deletes or relabels financial history to make rollback succeed.

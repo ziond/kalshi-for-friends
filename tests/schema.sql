@@ -127,13 +127,27 @@ SELECT pg_temp.expect_error(
 
 -- One settlement, with its winning option bound to the same market.
 SELECT pg_temp.expect_error(
-    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode) VALUES (1, 3, 2, 250, 150, 'PAYOUT')$$, '23503');
-INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode)
-    VALUES (1, 1, 2, 250, 150, 'PAYOUT'), (3, 5, 2, 50, 0, 'NO_WINNERS_REFUND');
+    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode, payout_at) VALUES (1, 3, 2, 250, 150, 'PAYOUT', CURRENT_TIMESTAMP)$$, '23503');
+INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode, payout_at)
+    VALUES (1, 1, 2, 250, 150, 'PAYOUT', CURRENT_TIMESTAMP), (3, 5, 2, 50, 0, 'NO_WINNERS_REFUND', CURRENT_TIMESTAMP);
 SELECT pg_temp.expect_error(
-    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode) VALUES (1, 1, 2, 250, 150, 'PAYOUT')$$, '23505');
+    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode, payout_at) VALUES (1, 1, 2, 250, 150, 'PAYOUT', CURRENT_TIMESTAMP)$$, '23505');
 SELECT pg_temp.expect_error(
-    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode) VALUES (2, 3, 2, 0, 0, 'PAYOUT')$$, '23514');
+    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode, payout_at) VALUES (2, 3, 2, 0, 0, 'PAYOUT', CURRENT_TIMESTAMP)$$, '23514');
+
+-- Payout grace period: payout_at is required, never before the pick, and the
+-- payout can't be recorded before payout_at.
+SELECT pg_temp.expect_error(
+    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode) VALUES (2, 3, 2, 0, 0, 'NO_WINNERS_REFUND')$$, '23502');
+SELECT pg_temp.expect_error(
+    $$INSERT INTO settlements (market_id, winning_option_id, resolved_by, total_pool, winning_pool, settlement_mode, payout_at) VALUES (2, 3, 2, 0, 0, 'NO_WINNERS_REFUND', CURRENT_TIMESTAMP - interval '1 minute')$$,
+    '23514', 'settlements_payout_check');
+SELECT pg_temp.expect_error(
+    $$UPDATE settlements SET payout_at = CURRENT_TIMESTAMP + interval '5 minutes', paid_out_at = CURRENT_TIMESTAMP WHERE market_id = 1$$,
+    '23514', 'settlements_payout_check');
+UPDATE markets SET status = 'PAYOUT_PENDING' WHERE id = 1;
+SELECT pg_temp.expect_error($$UPDATE markets SET status = 'PAID' WHERE id = 1$$, '23514', 'markets_status_check');
+UPDATE settlements SET paid_out_at = payout_at WHERE market_id IN (1, 3);
 
 UPDATE markets SET status = 'RESOLVED' WHERE id IN (1, 3);
 UPDATE positions SET result = 'WON', payout = 167, settled_at = CURRENT_TIMESTAMP WHERE id = 1;

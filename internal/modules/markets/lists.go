@@ -96,11 +96,12 @@ func (a *API) Activity(c *fiber.Ctx) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	c.Set("Cache-Control", "no-store")
 	return c.JSON(paginated(items, limit, offset))
 }
 
 func (a *API) ModQueue(c *fiber.Ctx) error {
-	rows, err := a.Pool.Query(c.UserContext(), `SELECT m.id FROM markets m JOIN communities c ON c.id=m.community_id WHERE m.status IN ('OPEN','LOCKED') AND ((c.visibility='PRIVATE' AND m.moderator_id=$1) OR (c.visibility='PUBLIC' AND EXISTS(SELECT 1 FROM community_members WHERE community_id=c.id AND user_id=$1 AND role IN ('ADMIN','MODERATOR')))) ORDER BY m.deadline,m.id`, middleware.UserID(c))
+	rows, err := a.Pool.Query(c.UserContext(), `SELECT m.id FROM markets m JOIN communities c ON c.id=m.community_id WHERE m.status IN ('OPEN','LOCKED','PAYOUT_PENDING') AND ((c.visibility='PRIVATE' AND m.moderator_id=$1) OR (c.visibility='PUBLIC' AND EXISTS(SELECT 1 FROM community_members WHERE community_id=c.id AND user_id=$1 AND role IN ('ADMIN','MODERATOR')))) ORDER BY m.deadline,m.id`, middleware.UserID(c))
 	if err != nil {
 		return err
 	}
@@ -118,7 +119,7 @@ func (a *API) ModQueue(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	pending, active := []json.RawMessage{}, []json.RawMessage{}
+	pending, payoutPending, active := []json.RawMessage{}, []json.RawMessage{}, []json.RawMessage{}
 	for _, id := range ids {
 		d, err := a.detail(c.UserContext(), id, middleware.UserID(c))
 		if err != nil {
@@ -130,13 +131,17 @@ func (a *API) ModQueue(c *fiber.Ctx) error {
 		if err := json.Unmarshal(d, &status); err != nil {
 			return err
 		}
-		if status.Status == "LOCKED" {
+		switch status.Status {
+		case "LOCKED":
 			pending = append(pending, d)
-		} else if status.Status == "OPEN" {
+		case "PAYOUT_PENDING":
+			payoutPending = append(payoutPending, d)
+		case "OPEN":
 			active = append(active, d)
 		}
 	}
-	return c.JSON(fiber.Map{"pending": pending, "active": active})
+	c.Set("Cache-Control", "no-store") // polled while payoutPending isn't empty
+	return c.JSON(fiber.Map{"pending": pending, "payoutPending": payoutPending, "active": active})
 }
 
 func (a *API) Leaderboard(c *fiber.Ctx) error {

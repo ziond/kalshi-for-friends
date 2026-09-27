@@ -1,7 +1,9 @@
 # API Contract (MVP)
 
-> Historical draft. The canonical contract is now `../../docs/api-contract.md`.
-> Implementation and pending verification are tracked in `requirements-alignment.md`.
+> Historical draft. The canonical contract is now [api-contract.md](api-contract.md).
+> Implementation and pending verification are tracked in [requirements-alignment.md](requirements-alignment.md).
+> Outdated here: resolving no longer pays out immediately. A pick starts a 5-minute
+> payout grace period (`PAYOUT_PENDING`); see api-contract.md, schema decision 16 and §6.
 
 Contract between the Go backend and the Next.js frontend. Go structs should mirror the TypeScript types below exactly (same field names via `json:"camelCase"` tags).
 

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 )
 
 func setupConfig(t *testing.T) {
@@ -18,7 +19,7 @@ func setupConfig(t *testing.T) {
 	for _, name := range []string{"JWT_PUBLIC_KEY", "JWT_PUBLIC_KEY_FILE", "ACCESS_TOKEN_TTL", "REFRESH_TOKEN_TTL"} {
 		t.Setenv(name, "")
 	}
-	for _, name := range []string{"DATABASE_URL", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSLMODE", "JWT_PRIVATE_KEY", "JWT_PRIVATE_KEY_FILE", "HTTP_HOST", "PORT", "COOKIE_NAME", "COOKIE_DOMAIN", "COOKIE_SECURE", "COOKIE_SAME_SITE", "APP_ENV", "INITIAL_BALANCE", "SESSION_TTL", "CORS_ORIGINS"} {
+	for _, name := range []string{"DATABASE_URL", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSLMODE", "JWT_PRIVATE_KEY", "JWT_PRIVATE_KEY_FILE", "HTTP_HOST", "PORT", "COOKIE_NAME", "COOKIE_DOMAIN", "COOKIE_SECURE", "COOKIE_SAME_SITE", "APP_ENV", "INITIAL_BALANCE", "SESSION_TTL", "CORS_ORIGINS", "PAYOUT_GRACE_MINUTES"} {
 		t.Setenv(name, "")
 	}
 	_, key, err := ed25519.GenerateKey(rand.Reader)
@@ -139,5 +140,24 @@ func TestDotEnvAndExplicitURL(t *testing.T) {
 	}
 	if cfg.DatabaseURL != "postgres://example@localhost/explicit" {
 		t.Fatal("explicit URL did not take precedence")
+	}
+}
+
+func TestRES16PayoutGraceMinutes(t *testing.T) {
+	setupConfig(t)
+	t.Setenv("DB_PASSWORD", "test")
+	cfg, err := Load()
+	if err != nil || cfg.PayoutGrace != 5*time.Minute {
+		t.Fatalf("default grace = %v, %v; want 5m", cfg, err)
+	}
+	t.Setenv("PAYOUT_GRACE_MINUTES", "10")
+	if cfg, err := Load(); err != nil || cfg.PayoutGrace != 10*time.Minute {
+		t.Fatalf("grace = %v, %v; want 10m", cfg, err)
+	}
+	for _, bad := range []string{"0", "-5", "1.5", "five", "1441"} {
+		t.Setenv("PAYOUT_GRACE_MINUTES", bad)
+		if _, err := Load(); err == nil {
+			t.Fatalf("PAYOUT_GRACE_MINUTES=%s accepted", bad)
+		}
 	}
 }

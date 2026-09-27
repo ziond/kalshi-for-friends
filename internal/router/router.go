@@ -63,22 +63,25 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *fiber.App {
 	api.Post("/auth/refresh", authHandler.Refresh)
 	api.Post("/auth/logout", requireAuth, authHandler.Logout)
 
-	api.Get("/me", requireAuth, usersHandler.GetMe)
-	marketAPI := &markets.API{Pool: pool}
-	api.Get("/markets", requireAuth, marketAPI.List)
-	api.Get("/markets/:id", requireAuth, marketAPI.Get)
-	api.Get("/markets/:id/activity", requireAuth, marketAPI.Activity)
+	marketAPI := &markets.API{Pool: pool, PayoutGrace: cfg.PayoutGrace}
+	// Reads that show balances, markets or stats first apply any overdue
+	// payout, so results are current at payoutAt even if the job is late.
+	paid := marketAPI.PayDueOnRead
+	api.Get("/me", requireAuth, paid, usersHandler.GetMe)
+	api.Get("/markets", requireAuth, paid, marketAPI.List)
+	api.Get("/markets/:id", requireAuth, paid, marketAPI.Get)
+	api.Get("/markets/:id/activity", requireAuth, paid, marketAPI.Activity)
 	api.Post("/markets/:id/positions", requireAuth, marketAPI.Bet)
 	api.Post("/markets/:id/resolve", requireAuth, marketAPI.Resolve)
 	api.Post("/markets/:id/cancel", requireAuth, marketAPI.Cancel)
-	api.Get("/me/positions", requireAuth, marketAPI.Positions)
-	api.Get("/me/transactions", requireAuth, marketAPI.Transactions)
-	api.Get("/me/mod-queue", requireAuth, marketAPI.ModQueue)
+	api.Get("/me/positions", requireAuth, paid, marketAPI.Positions)
+	api.Get("/me/transactions", requireAuth, paid, marketAPI.Transactions)
+	api.Get("/me/mod-queue", requireAuth, paid, marketAPI.ModQueue)
 	walletAPI := &points.API{Pool: pool, DepositsEnabled: cfg.DepositsEnabled}
-	api.Get("/me/wallet", requireAuth, walletAPI.Get)
+	api.Get("/me/wallet", requireAuth, paid, walletAPI.Get)
 	api.Post("/me/wallet/deposit", requireAuth, walletAPI.Deposit)
 	api.Patch("/me", requireAuth, usersHandler.UpdateMe)
-	api.Get("/users/:id", requireAuth, usersHandler.GetProfile)
+	api.Get("/users/:id", requireAuth, paid, usersHandler.GetProfile)
 	api.Get("/invites/:code", requireAuth, communitiesHandler.InvitePreview)
 
 	c := api.Group("/communities", requireAuth)
@@ -88,9 +91,9 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *fiber.App {
 	c.Get("/discover", communitiesHandler.Discover)
 	c.Post("/:id/join", communitiesHandler.JoinPublic)
 	c.Get("/:id", communitiesHandler.Get)
-	c.Get("/:id/markets", marketAPI.List)
+	c.Get("/:id/markets", paid, marketAPI.List)
 	c.Post("/:id/markets", marketAPI.Create)
-	c.Get("/:id/leaderboard", marketAPI.Leaderboard)
+	c.Get("/:id/leaderboard", paid, marketAPI.Leaderboard)
 	c.Patch("/:id", communitiesHandler.Update)
 	c.Post("/:id/invite-code", communitiesHandler.RegenerateInviteCode)
 	c.Get("/:id/members", communitiesHandler.ListMembers)

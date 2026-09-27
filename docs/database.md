@@ -17,11 +17,11 @@ numbering so both engineers work from the same schema.
 | wallets | user_id PK, balance, updated_at | Owen; registration must create one |
 | communities | id, name, description, invite_code, creator_id | Zion |
 | community_members | PK (community_id, user_id), role, joined_at | Zion |
-| markets | id, community_id, creator_id, moderator_id, title, description, market_type, deadline, status, cancellation audit | Owen |
+| markets | id, community_id, creator_id, moderator_id, title, description, market_type, deadline, status (OPEN, LOCKED, PAYOUT_PENDING, RESOLVED, CANCELLED), cancellation audit | Owen |
 | market_options | id, market_id, option_text, sort_order, total_amount | Owen |
 | market_participants | PK (market_id, user_id), option_id | Owen |
 | positions | id, market_id, user_id, option_id, amount, request_key, result, payout, settled_at | Owen |
-| settlements | market_id PK, winning_option_id, resolved_by, resolved_at, notes, pool snapshots, settlement_mode | Owen |
+| settlements | market_id PK, winning_option_id, resolved_by, resolved_at, payout_at, paid_out_at, notes, pool snapshots, settlement_mode | Owen |
 | transactions | id, user_id, amount, transaction_type, balance_after, reference fields, request_key | Owen; registration must write INITIAL_BONUS |
 
 All historical user/market relationships use restrictive deletion. Community
@@ -114,7 +114,7 @@ Every point-changing action must update wallets and append transactions in the
 same database transaction. Constraints are defense in depth, not a replacement
 for this application logic.
 
-For placement, resolution, and cancellation:
+For placement, picking a winner, payout, and cancellation:
 
 1. Lock the MARKET row first with SELECT ... FOR UPDATE.
 2. Recheck permission, terminal state, and applicable deadline.
@@ -146,6 +146,25 @@ the team chooses the policy.
 settlements.market_id is the primary key, allowing one recorded resolution.
 The winning option is constrained to the market. Snapshot total_pool and
 winning_pool. settlement_mode is PAYOUT or NO_WINNERS_REFUND.
+
+Settlement happens in two steps (migration 000009, api-contract.md decision 16):
+
+1. Pick. The moderator's pick inserts the settlement with resolved_at = now,
+   payout_at = now + PAYOUT_GRACE_MINUTES (default 5) and paid_out_at NULL, and
+   sets the market to PAYOUT_PENDING. No wallet, position, stat or ledger row
+   changes. The pick is final: a second pick is rejected while PAYOUT_PENDING.
+2. Payout. Once payout_at has passed, the payout job (every 5 seconds, plus on
+   reads if the job is late) locks the market row, re-checks PAYOUT_PENDING and
+   payout_at, settles every position as below, sets paid_out_at and moves the
+   market to RESOLVED. Running it twice changes nothing.
+
+A nullify during the grace period locks the market row, deletes the pending
+settlement, refunds every position and sets CANCELLED. If payout_at has already
+passed it is rejected instead, so a payout and a nullify can never both happen.
+settlements_payout_check keeps payout_at >= resolved_at and paid_out_at >= payout_at.
+settlements_payout_due_idx (partial, paid_out_at IS NULL) serves the payout job.
+Rolling 000009 back deletes pending settlements and returns those markets to LOCKED.
+The application role needs DELETE and UPDATE on settlements for this.
 
 For a no-winning-stake resolution, keep status RESOLVED and the settlement
 record identifying the actual winner, but mark positions REFUNDED and refund
@@ -190,9 +209,10 @@ immutability trigger or separate DB permissions are added at this stage.
 - Me.balance: join wallets by user_id.
 - Accuracy: correct_predictions / total_predictions, zero when total is zero.
 - Market probability: option pool / total pool; uniform split when pool is zero.
-- isWinner: null until a recorded result, then compare to winning_option_id.
+- isWinner: null until the market is RESOLVED (still null during PAYOUT_PENDING), then compare to winning_option_id.
 - canBet/canResolve/canCancel: computed from current user, role, state, and time.
-- potentialPayout: estimate from the current pool; never a guaranteed return.
+- potentialPayout: estimate from the current pool; never a guaranteed return. On
+  a RESOLVED market, MyStake.potentialPayout is the actual payout.
 - Community netProfit: sum(payout - amount) for final positions in that community.
   Refunded positions contribute zero; pending stakes are not realized losses.
 - Prediction counts are per user/market, not per added position.

@@ -18,7 +18,10 @@ import (
 	"github.com/ziond/kalshi-for-friends/backend/internal/middleware"
 )
 
-type API struct{ Pool *pgxpool.Pool }
+type API struct {
+	Pool        *pgxpool.Pool
+	PayoutGrace time.Duration // wait between picking a winner and paying out
+}
 
 func invalid(field, message string) error {
 	return apperror.Validation("Invalid request", map[string]string{field: message})
@@ -85,6 +88,7 @@ func marketJSON(ctx context.Context, db database.DBTX, id, user int64) (json.Raw
  'id',b.id,'communityId',b.community_id,'communityName',b.community_name,'communityVisibility',b.visibility,
  'title',b.title,'description',b.description,'marketType',b.market_type,'status',b.effective_status,'deadline',b.deadline,
  'createdAt',b.created_at,'updatedAt',b.updated_at,'totalPool',b.pool,
+ 'payoutAt',(SELECT payout_at FROM settlements WHERE market_id=b.id),
  'participantCount',(SELECT count(*) FROM market_participants WHERE market_id=b.id),
  'creator',(SELECT jsonb_build_object('id',id,'username',username,'avatarUrl',avatar_url) FROM users WHERE id=b.creator_id),
  'moderator',(SELECT jsonb_build_object('id',id,'username',username,'avatarUrl',avatar_url) FROM users WHERE id=b.moderator_id),
@@ -92,9 +96,9 @@ func marketJSON(ctx context.Context, db database.DBTX, id, user int64) (json.Raw
  'positionCount',(SELECT count(*) FROM positions p WHERE p.option_id=o.id),
  'probability',CASE WHEN b.pool=0 THEN 1.0/(SELECT count(*) FROM market_options WHERE market_id=b.id) ELSE o.total_amount::numeric/b.pool END,
  'isWinner',CASE WHEN b.status='RESOLVED' THEN o.id=(SELECT winning_option_id FROM settlements WHERE market_id=b.id) ELSE NULL END) ORDER BY o.sort_order) FROM market_options o WHERE o.market_id=b.id),
- 'myStake',(SELECT jsonb_build_object('optionId',p.option_id,'amount',sum(p.amount),'potentialPayout',floor(sum(p.amount)::numeric*b.pool/NULLIF(o.total_amount,0))) FROM positions p JOIN market_options o ON o.id=p.option_id WHERE p.market_id=b.id AND p.user_id=$2 GROUP BY p.option_id,o.total_amount),
- 'settlement',(SELECT jsonb_build_object('winningOptionId',s.winning_option_id,'resolvedBy',jsonb_build_object('id',u.id,'username',u.username,'avatarUrl',u.avatar_url),'resolvedAt',s.resolved_at,'notes',s.notes) FROM settlements s JOIN users u ON u.id=s.resolved_by WHERE s.market_id=b.id),
- 'permissions',jsonb_build_object('canBet',b.is_member AND b.effective_status='OPEN','canResolve',b.is_mod AND b.effective_status='LOCKED','canCancel',b.is_mod AND b.effective_status='LOCKED')
+ 'myStake',(SELECT jsonb_build_object('optionId',p.option_id,'amount',sum(p.amount),'potentialPayout',CASE WHEN b.status='RESOLVED' THEN sum(p.payout) ELSE floor(sum(p.amount)::numeric*b.pool/NULLIF(o.total_amount,0)) END) FROM positions p JOIN market_options o ON o.id=p.option_id WHERE p.market_id=b.id AND p.user_id=$2 GROUP BY p.option_id,o.total_amount),
+ 'settlement',(SELECT jsonb_build_object('winningOptionId',s.winning_option_id,'resolvedBy',jsonb_build_object('id',u.id,'username',u.username,'avatarUrl',u.avatar_url),'resolvedAt',s.resolved_at,'payoutAt',s.payout_at,'paidOutAt',s.paid_out_at,'notes',s.notes) FROM settlements s JOIN users u ON u.id=s.resolved_by WHERE s.market_id=b.id),
+ 'permissions',jsonb_build_object('canBet',b.is_member AND b.effective_status='OPEN','canResolve',b.is_mod AND b.effective_status='LOCKED','canCancel',b.is_mod AND b.effective_status IN ('LOCKED','PAYOUT_PENDING'))
  ) FROM base b`, id, user).Scan(&raw)
 	if err != nil {
 		return nil, err
@@ -153,6 +157,7 @@ func (a *API) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	c.Set("Cache-Control", "no-store") // polled for live odds and payout countdowns
 	return c.JSON(d)
 }
 
@@ -303,7 +308,7 @@ func (a *API) List(c *fiber.Ctx) error {
 		}
 	}
 	status, visibility, sort := c.Query("status"), c.Query("visibility"), c.Query("sort", "volume")
-	if status != "" && status != "OPEN" && status != "LOCKED" && status != "RESOLVED" && status != "CANCELLED" {
+	if status != "" && status != "OPEN" && status != "LOCKED" && status != "PAYOUT_PENDING" && status != "RESOLVED" && status != "CANCELLED" {
 		return invalid("status", "Invalid status")
 	}
 	if visibility != "" && visibility != "PUBLIC" && visibility != "PRIVATE" {

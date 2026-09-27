@@ -64,6 +64,7 @@ func TestDATA02And03ConcurrentMutations(t *testing.T) {
 		t.Fatal(err)
 	}
 	race(path+"/resolve", owner, map[string]any{"winningOptionId": option}, 409)
+	endGracePeriod(t, pool)
 	wallet := call(t, app, "GET", "/me/wallet", bettor, nil)
 	if wallet.body["balance"] != float64(1000) {
 		t.Fatal("double payout")
@@ -91,6 +92,7 @@ func TestRES07And08Refunds(t *testing.T) {
 				route = path + "/cancel"
 			}
 			expect(t, call(t, app, "POST", route, owner, map[string]any{"winningOptionId": options[1].(map[string]any)["id"]}), 200, "")
+			endGracePeriod(t, pool)
 			wallet := call(t, app, "GET", "/me/wallet", owner, nil)
 			if wallet.body["balance"] != float64(1000) {
 				t.Fatal("refund lost points")
@@ -135,6 +137,7 @@ func TestE2E_MarketWalletLifecycle(t *testing.T) {
 	settled := call(t, app, "POST", path+"/resolve", alice, map[string]any{"winningOptionId": yes})
 	expect(t, settled, 200, "")
 	expect(t, call(t, app, "POST", path+"/resolve", alice, map[string]any{"winningOptionId": yes}), 409, "MARKET_CLOSED")
+	endGracePeriod(t, pool)
 	wallet := call(t, app, "GET", "/me/wallet", alice, nil)
 	if wallet.body["balance"] != float64(1300) {
 		t.Fatalf("winner balance: %v", wallet.body)

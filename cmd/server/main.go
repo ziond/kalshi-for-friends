@@ -12,6 +12,7 @@ import (
 
 	"github.com/ziond/kalshi-for-friends/backend/internal/config"
 	"github.com/ziond/kalshi-for-friends/backend/internal/database"
+	"github.com/ziond/kalshi-for-friends/backend/internal/modules/markets"
 	"github.com/ziond/kalshi-for-friends/backend/internal/router"
 )
 
@@ -37,6 +38,11 @@ func run() error {
 	defer pool.Close()
 
 	app := router.New(cfg, pool)
+
+	// Pays out markets whose grace period has ended, even if nobody is reading them.
+	jobCtx, stopJob := context.WithCancel(context.Background())
+	defer stopJob()
+	go markets.RunPayoutJob(jobCtx, pool, 5*time.Second)
 
 	go func() {
 		stop := make(chan os.Signal, 1)

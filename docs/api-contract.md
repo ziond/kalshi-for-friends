@@ -330,11 +330,11 @@ All routes are prefixed with `/api/v1`. Every route requires a valid `access_tok
 | GET | `/markets?status=&visibility=&sort=&cursor=&limit=` | any | — | `Paginated<MarketSummary>` — home "trending" sections (see `MarketListParams`) |
 | GET | `/communities/:id/markets?status=&cursor=` | member, or anyone if PUBLIC | — | `Paginated<MarketSummary>` |
 | POST | `/communities/:id/markets` | member | `CreateMarketRequest` | `MarketDetail` |
-| GET | `/markets/:id` | member | — | `MarketDetail` — polled every 5 s while `OPEN`/`LOCKED` (see [Live updates](#live-updates-mvp-polling)); `Cache-Control: no-store` |
+| GET | `/markets/:id` | member | — | `MarketDetail` — polled every 5 s while `OPEN`/`LOCKED`/`PAYOUT_PENDING` (see [Live updates](#live-updates-mvp-polling)); `Cache-Control: no-store` |
 | GET | `/markets/:id/activity?cursor=` | member | — | `Paginated<MarketActivity>` — newest first; polled with `/markets/:id`; `Cache-Control: no-store` |
 | POST | `/markets/:id/positions` | member, while OPEN | `PlacePositionRequest` | `{ position: Position; market: MarketDetail; balance: number }` |
 | POST | `/markets/:id/resolve` | market moderator, while LOCKED | `ResolveMarketRequest` | `MarketDetail` with status `PAYOUT_PENDING` — picks the winner (final) and starts the 5-minute grace period; no coins move. While `PAYOUT_PENDING`: `409 MARKET_CLOSED` "A winner has already been picked. You can only nullify this market" for any option. Other statuses: `409 MARKET_CLOSED` |
-| POST | `/markets/:id/cancel` | market moderator, while LOCKED or PAYOUT_PENDING ("Nullify") | `CancelMarketRequest` | `MarketDetail` with status `CANCELLED` — refunds every bet immediately; final. `409 MARKET_CLOSED` once paid out |
+| POST | `/markets/:id/cancel` | market moderator, while LOCKED or PAYOUT_PENDING ("Nullify") | `CancelMarketRequest` | `MarketDetail` with status `CANCELLED` — refunds every bet immediately; final. `409 MARKET_CLOSED` once paid out, including a nullify that arrives after `payoutAt` but before the payout ran ("Payouts have already gone out"): the payout wins |
 
 `POST /markets/:id/positions` returns the updated market and new balance so the UI can refresh odds and the wallet without a second fetch.
 
@@ -360,7 +360,7 @@ Each of these must run inside a single database transaction.
 2. Insert the settlement row with `resolved_at = now`, `payout_at = now + PAYOUT_GRACE_MINUTES`, `paid_out_at = NULL`.
 3. Set market status to `PAYOUT_PENDING`. No coins move; positions stay `PENDING`.
 
-**Pay out** (scheduled job at `payout_at`, or on the next read if the job is late — must be idempotent)
+**Pay out** (scheduled job at `payout_at`, or on the next read if the job is late — must be idempotent. The Go API runs the job every 5 seconds and also pays out overdue markets before `GET /me`, `/me/wallet`, `/me/positions`, `/me/transactions`, `/me/mod-queue`, `/users/:id`, `/markets`, `/markets/:id`, `/markets/:id/activity`, `/communities/:id/markets` and `/communities/:id/leaderboard`)
 1. Lock the market row; continue only if status is still `PAYOUT_PENDING` and `now ≥ payout_at`.
 2. Pay each winner using the payout formula; log `WIN_REWARD`. Mark positions `WON` / `LOST`.
 3. If nobody picked the winning option, refund everyone instead (`REFUND`, positions `REFUNDED`).
@@ -369,7 +369,7 @@ Each of these must run inside a single database transaction.
 
 **Cancel a market** (`POST /markets/:id/cancel`, "Nullify")
 1. Lock the market row; check the caller is its moderator and status is `LOCKED` or `PAYOUT_PENDING`.
-2. Delete the pending settlement row, if any.
+2. Delete the pending settlement row, if any. If its `payout_at` has already passed, stop with `MARKET_CLOSED` and change nothing: the payout wins.
 3. Refund every position with a `REFUND` transaction; mark positions `REFUNDED`.
 4. Set market status to `CANCELLED`. Because the payout also locks the row and re-checks the status, a nullify and a payout can never both happen.
 

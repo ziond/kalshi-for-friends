@@ -42,6 +42,10 @@ type Config struct {
 	// registration, never through a wallet column default.
 	InitialBalance  int64
 	DepositsEnabled bool
+
+	// PayoutGrace is how long after a moderator picks a winner the payout
+	// waits; until then the market can only be nullified.
+	PayoutGrace time.Duration
 }
 
 func Load() (*Config, error) {
@@ -131,6 +135,11 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, errors.New("config: invalid DEPOSITS_ENABLED")
 	}
+	grace, err := strconv.Atoi(getEnv("PAYOUT_GRACE_MINUTES", "5"))
+	if err != nil || grace < 1 || grace > 1440 {
+		return nil, errors.New("config: PAYOUT_GRACE_MINUTES must be a whole number from 1 to 1440")
+	}
+	cfg.PayoutGrace = time.Duration(grace) * time.Minute
 
 	seenOrigins := map[string]bool{}
 	origins := append([]string{os.Getenv("FRONTEND_URL")}, strings.Split(os.Getenv("CORS_ORIGINS"), ",")...)

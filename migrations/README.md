@@ -10,6 +10,11 @@ Each file is an explicit transaction, so a failed file rolls back its DDL.
 | 000002 | communities, community_members |
 | 000003 | markets, market_options, market_participants, positions |
 | 000004 | settlements, transactions |
+| 000005 | refresh_tokens |
+| 000006 | communities.visibility |
+| 000007 | DEPOSIT transactions |
+| 000008 | calculate_prediction_score, score backfill |
+| 000009 | PAYOUT_PENDING status, settlements.payout_at / paid_out_at |
 
 Use the golang-migrate CLI with PostgreSQL support. It maintains schema version,
 migration locking, and dirty state. Do not run individual files manually against
